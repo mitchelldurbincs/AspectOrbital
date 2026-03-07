@@ -1,0 +1,26 @@
+# discord-hub
+
+`discord-hub` keeps a Discord gateway connection alive and exposes a local REST endpoint for internal services to post alerts.
+
+## Local run
+
+1. Fill in values in `.env`.
+2. Start the hub:
+
+```bash
+go run ./cmd/discord-hub
+```
+
+3. In Discord, run `/ping` to verify the bot is responsive.
+
+## Notify endpoint
+
+Send alerts from local services:
+
+```bash
+curl -X POST http://localhost:8080/notify \
+  -H "Content-Type: application/json" \
+  -d '{"targetChannel":"kalshi-alerts","message":"Test alert","severity":"info"}'
+```
+
+Valid severities: `info`, `warning`, `critical`.
