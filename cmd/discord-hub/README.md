@@ -13,6 +13,15 @@ go run ./cmd/discord-hub
 
 3. In Discord, run `/ping` to verify the bot is responsive.
 
+## Beeminder-spoke command discovery
+
+If `beeminder-spoke` is running, `discord-hub` can auto-register spoke-owned slash commands by reading:
+
+- `SPOKE_COMMANDS_URL` (default `http://127.0.0.1:8090/control/commands`)
+- `SPOKE_COMMAND_URL` (default `http://127.0.0.1:8090/control/command`)
+
+Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
+
 ## Notify endpoint
 
 Send alerts from local services:

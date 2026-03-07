@@ -7,8 +7,27 @@ services:
       - ../.env
     environment:
       HUB_HTTP_ADDR: 0.0.0.0:8080
+      SPOKE_COMMANDS_URL: http://beeminder-spoke:8090/control/commands
+      SPOKE_COMMAND_URL: http://beeminder-spoke:8090/control/command
+    depends_on:
+      - beeminder-spoke
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - personal-infra
+
+  beeminder-spoke:
+    build:
+      context: ..
+      dockerfile: cmd/beeminder-spoke/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      BEEMINDER_SPOKE_HTTP_ADDR: 0.0.0.0:8090
+      DISCORD_HUB_NOTIFY_URL: http://discord-hub:8080/notify
+    ports:
+      - "8090:8090"
     restart: unless-stopped
     networks:
       - personal-infra

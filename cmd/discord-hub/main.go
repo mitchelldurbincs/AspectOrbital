@@ -66,7 +66,9 @@ func main() {
 		logger.Fatalf("failed to create discord session: %v", err)
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds
-	session.AddHandler(pingInteractionHandler(logger))
+
+	spokeBridge := discoverSpokeCommandBridge(logger)
+	session.AddHandler(interactionHandler(logger, spokeBridge))
 
 	if err := session.Open(); err != nil {
 		logger.Fatalf("failed to open discord session: %v", err)
@@ -88,6 +90,12 @@ func main() {
 
 	if _, err := upsertPingCommand(session, appID, guildID); err != nil {
 		logger.Fatalf("failed to register /ping command: %v", err)
+	}
+
+	if spokeBridge != nil {
+		if err := upsertSpokeCommands(session, appID, guildID, spokeBridge); err != nil {
+			logger.Printf("warning: failed to register beeminder-spoke commands: %v", err)
+		}
 	}
 
 	channelMap := buildChannelMap()
@@ -266,26 +274,70 @@ func buildChannelMap() map[string]string {
 	return channelMap
 }
 
-func pingInteractionHandler(logger *log.Logger) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil || i.Type != discordgo.InteractionApplicationCommand {
 			return
 		}
-		if i.ApplicationCommandData().Name != pingCommandName {
+
+		commandData := i.ApplicationCommandData()
+
+		if commandData.Name == pingCommandName {
+			if err := respondEphemeral(s, i.Interaction, "pong"); err != nil {
+				logger.Printf("failed to respond to /ping: %v", err)
+			}
 			return
 		}
 
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "pong",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		if spokeBridge == nil || !spokeBridge.OwnsCommand(commandData.Name) {
+			return
+		}
+
+		argument := interactionStringOption(commandData.Options, spokeCommandArgumentOption)
+
+		execCtx, cancel := context.WithTimeout(context.Background(), spokeCommandHTTPTimeout)
+		defer cancel()
+
+		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, argument)
 		if err != nil {
-			logger.Printf("failed to respond to /ping: %v", err)
+			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
+			if respondErr := respondEphemeral(s, i.Interaction, truncateForDiscord(spokeCommandFailurePrefix+err.Error())); respondErr != nil {
+				logger.Printf("failed to send spoke command error response: %v", respondErr)
+			}
+			return
+		}
+
+		if err := respondEphemeral(s, i.Interaction, message); err != nil {
+			logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
 		}
 	}
+}
+
+func respondEphemeral(session *discordgo.Session, interaction *discordgo.Interaction, message string) error {
+	return session.InteractionRespond(interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: message,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+}
+
+func interactionStringOption(options []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+	for _, option := range options {
+		if option.Name != name {
+			continue
+		}
+
+		value, ok := option.Value.(string)
+		if !ok {
+			return ""
+		}
+
+		return strings.TrimSpace(value)
+	}
+
+	return ""
 }
 
 func upsertPingCommand(session *discordgo.Session, appID, guildID string) (*discordgo.ApplicationCommand, error) {
@@ -294,16 +346,54 @@ func upsertPingCommand(session *discordgo.Session, appID, guildID string) (*disc
 		Description: "Check whether discord-hub is alive",
 	}
 
+	return upsertCommand(session, appID, guildID, command)
+}
+
+func upsertSpokeCommands(session *discordgo.Session, appID, guildID string, bridge *spokeCommandBridge) error {
+	commands := bridge.BuildDiscordCommands()
+	desired := make(map[string]struct{}, len(commands))
+
+	for _, command := range commands {
+		desired[command.Name] = struct{}{}
+
+		if _, err := upsertCommand(session, appID, guildID, command); err != nil {
+			return err
+		}
+	}
+
 	existingCommands, err := session.ApplicationCommands(appID, guildID)
 	if err != nil {
-		return nil, fmt.Errorf("could not list existing commands: %w", err)
+		return fmt.Errorf("could not list existing commands for spoke cleanup: %w", err)
+	}
+
+	for _, existing := range existingCommands {
+		if existing.Description != spokeCommandDescription {
+			continue
+		}
+		if _, ok := desired[existing.Name]; ok {
+			continue
+		}
+
+		if err := session.ApplicationCommandDelete(appID, guildID, existing.ID); err != nil {
+			return fmt.Errorf("could not delete stale spoke command /%s: %w", existing.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func upsertCommand(session *discordgo.Session, appID, guildID string, command *discordgo.ApplicationCommand) (*discordgo.ApplicationCommand, error) {
+
+	existingCommands, err := session.ApplicationCommands(appID, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("could not list existing commands for /%s: %w", command.Name, err)
 	}
 
 	for _, existing := range existingCommands {
 		if existing.Name == command.Name {
 			edited, editErr := session.ApplicationCommandEdit(appID, guildID, existing.ID, command)
 			if editErr != nil {
-				return nil, fmt.Errorf("could not update existing /ping command: %w", editErr)
+				return nil, fmt.Errorf("could not update existing /%s command: %w", command.Name, editErr)
 			}
 			return edited, nil
 		}
@@ -311,7 +401,7 @@ func upsertPingCommand(session *discordgo.Session, appID, guildID string) (*disc
 
 	created, err := session.ApplicationCommandCreate(appID, guildID, command)
 	if err != nil {
-		return nil, fmt.Errorf("could not create /ping command: %w", err)
+		return nil, fmt.Errorf("could not create /%s command: %w", command.Name, err)
 	}
 
 	return created, nil
