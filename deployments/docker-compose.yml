@@ -1,3 +1,13 @@
+# Canonical port map (host -> container)
+# | Service               | Env var                         | Default local | Docker compose |
+# |-----------------------|----------------------------------|---------------|----------------|
+# | discord-hub           | HUB_HTTP_ADDR                    | 127.0.0.1:8080 | 8080:8080     |
+# | beeminder-spoke       | BEEMINDER_SPOKE_HTTP_ADDR        | 127.0.0.1:8090 | 8090:8090     |
+# | finance-spoke         | FINANCE_SPOKE_HTTP_ADDR          | 127.0.0.1:8091 | 8091:8091     |
+# | kalshi-spoke          | KALSHI_SPOKE_HTTP_ADDR           | 127.0.0.1:8092 | 8092:8092     |
+# | accountability-spoke* | ACCOUNTABILITY_SPOKE_HTTP_ADDR   | 127.0.0.1:8093 | n/a           |
+# *accountability-spoke is not yet included in this compose file.
+
 services:
   discord-hub:
     build:
