@@ -56,6 +56,21 @@ func TestInteractionOptionValuesReturnsNilWhenNoUsableOptions(t *testing.T) {
 	}
 }
 
+func TestInteractionOptionValuesSupportsAttachmentMetadata(t *testing.T) {
+	options := []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "proof", Value: &discordgo.MessageAttachment{ID: "a1", Filename: "proof.png", URL: "https://cdn/proof.png", ContentType: "image/png", Size: 42}},
+	}
+
+	got := interactionOptionValues(options)
+	proof, ok := got["proof"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected proof map, got %#v", got["proof"])
+	}
+	if proof["id"] != "a1" || proof["filename"] != "proof.png" {
+		t.Fatalf("unexpected proof metadata: %#v", proof)
+	}
+}
+
 func TestInteractionHandlerRespondsToPing(t *testing.T) {
 	var messages []string
 

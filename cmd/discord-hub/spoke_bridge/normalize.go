@@ -93,6 +93,8 @@ func normalizeOptionType(raw string) string {
 		return "number"
 	case "boolean", "bool":
 		return "boolean"
+	case "attachment", "file":
+		return "attachment"
 	default:
 		return "string"
 	}
@@ -144,6 +146,10 @@ func pruneCommandOptions(input map[string]any) map[string]any {
 		case string:
 			clean[name] = strings.TrimSpace(value)
 		case bool:
+			clean[name] = value
+		case map[string]any:
+			clean[name] = value
+		case []any:
 			clean[name] = value
 		case float64:
 			clean[name] = value

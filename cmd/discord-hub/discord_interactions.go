@@ -87,6 +87,16 @@ func interactionOptionValues(options []*discordgo.ApplicationCommandInteractionD
 			values[name] = value
 		case float64:
 			values[name] = value
+		case *discordgo.MessageAttachment:
+			if value != nil {
+				values[name] = map[string]any{
+					"id":           strings.TrimSpace(value.ID),
+					"filename":     strings.TrimSpace(value.Filename),
+					"url":          strings.TrimSpace(value.URL),
+					"content_type": strings.TrimSpace(value.ContentType),
+					"size":         value.Size,
+				}
+			}
 		default:
 			if option.Value != nil {
 				values[name] = fmt.Sprint(option.Value)
