@@ -20,9 +20,13 @@ type notifyPayload struct {
 
 type hubHandler struct {
 	log             *log.Logger
-	session         *discordgo.Session
+	session         discordMessageSender
 	channelNameToID map[string]string
 	criticalMention string
+}
+
+type discordMessageSender interface {
+	ChannelMessageSend(channelID string, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
 }
 
 func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {

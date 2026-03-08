@@ -9,6 +9,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+var respondEphemeralFunc = respondEphemeral
+
 func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil || i.Type != discordgo.InteractionApplicationCommand {
@@ -18,13 +20,16 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 		commandData := i.ApplicationCommandData()
 
 		if commandData.Name == pingCommandName {
-			if err := respondEphemeral(s, i.Interaction, "pong"); err != nil {
+			if err := respondEphemeralFunc(s, i.Interaction, "pong"); err != nil {
 				logger.Printf("failed to respond to /ping: %v", err)
 			}
 			return
 		}
 
 		if spokeBridge == nil || !spokeBridge.OwnsCommand(commandData.Name) {
+			if err := respondEphemeralFunc(s, i.Interaction, "That command is not available right now. Try again in a moment."); err != nil {
+				logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
+			}
 			return
 		}
 
@@ -36,13 +41,13 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, options)
 		if err != nil {
 			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
-			if respondErr := respondEphemeral(s, i.Interaction, truncateForDiscord(spokeCommandFailurePrefix+err.Error())); respondErr != nil {
+			if respondErr := respondEphemeralFunc(s, i.Interaction, formatSpokeCommandFailure(err)); respondErr != nil {
 				logger.Printf("failed to send spoke command error response: %v", respondErr)
 			}
 			return
 		}
 
-		if err := respondEphemeral(s, i.Interaction, message); err != nil {
+		if err := respondEphemeralFunc(s, i.Interaction, message); err != nil {
 			logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
 		}
 	}

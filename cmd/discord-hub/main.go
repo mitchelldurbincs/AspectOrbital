@@ -12,9 +12,11 @@ import (
 func main() {
 	logger := applog.New("discord-hub")
 
-	if err := godotenv.Load(); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			logger.Printf("unable to load .env file: %v", err)
+	for _, envFile := range []string{"cmd/discord-hub/.env", ".env"} {
+		if err := godotenv.Load(envFile); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				logger.Printf("unable to load %s: %v", envFile, err)
+			}
 		}
 	}
 
