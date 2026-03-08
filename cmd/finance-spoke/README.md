@@ -2,6 +2,16 @@
 
 `finance-spoke` posts a weekly Discord summary of unique subscription charges detected from Plaid recurring outflow streams.
 
+## Canonical local port map
+
+| Service | Default bind |
+|---|---|
+| `discord-hub` | `127.0.0.1:8080` |
+| `beeminder-spoke` | `127.0.0.1:8090` |
+| `finance-spoke` | `127.0.0.1:8091` |
+| `kalshi-spoke` | `127.0.0.1:8092` |
+| `accountability-spoke` | `127.0.0.1:8093` |
+
 ## What this scaffold includes
 
 - Weekly scheduler with configurable weekday/time/timezone.
