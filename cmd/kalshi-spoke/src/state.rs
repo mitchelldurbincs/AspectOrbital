@@ -2,12 +2,12 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
 };
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedState {
@@ -49,33 +49,33 @@ impl StateStore {
         })
     }
 
-    pub fn snapshot(&self) -> PersistedState {
-        self.state.lock().expect("state mutex poisoned").clone()
+    pub async fn snapshot(&self) -> PersistedState {
+        self.state.lock().await.clone()
     }
 
-    pub fn market_snapshot(&self, market_ticker: &str) -> MarketState {
+    pub async fn market_snapshot(&self, market_ticker: &str) -> MarketState {
         self.state
             .lock()
-            .expect("state mutex poisoned")
+            .await
             .markets
             .get(market_ticker)
             .cloned()
             .unwrap_or_default()
     }
 
-    pub fn has_market(&self, market_ticker: &str) -> bool {
+    pub async fn has_market(&self, market_ticker: &str) -> bool {
         self.state
             .lock()
-            .expect("state mutex poisoned")
+            .await
             .markets
             .contains_key(market_ticker)
     }
 
-    pub fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
+    pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
     where
         F: FnOnce(&mut MarketState),
     {
-        let mut guard = self.state.lock().expect("state mutex poisoned");
+        let mut guard = self.state.lock().await;
         let entry = guard.markets.entry(market_ticker.to_string()).or_default();
         update(entry);
         let snapshot = entry.clone();

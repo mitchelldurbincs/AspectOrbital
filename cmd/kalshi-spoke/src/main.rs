@@ -3,12 +3,7 @@ mod discord;
 mod kalshi;
 mod state;
 
-use std::{
-    collections::BTreeMap,
-    io::ErrorKind,
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use std::{collections::BTreeMap, io::ErrorKind, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
@@ -21,7 +16,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use state::{PersistedState, StateStore};
-use tokio::{net::TcpListener, sync::watch, time::sleep};
+use tokio::{net::TcpListener, sync::{watch, Mutex}, time::sleep};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
@@ -111,40 +106,28 @@ impl RuntimeState {
         }
     }
 
-    fn snapshot(&self) -> RuntimeSnapshot {
-        self.inner.lock().expect("runtime mutex poisoned").clone()
+    async fn snapshot(&self) -> RuntimeSnapshot {
+        self.inner.lock().await.clone()
     }
 
-    fn set_ws_connected(&self, connected: bool) {
-        self.inner
-            .lock()
-            .expect("runtime mutex poisoned")
-            .ws_connected = connected;
+    async fn set_ws_connected(&self, connected: bool) {
+        self.inner.lock().await.ws_connected = connected;
     }
 
-    fn clear_ws_error(&self) {
-        self.inner
-            .lock()
-            .expect("runtime mutex poisoned")
-            .last_ws_error = None;
+    async fn clear_ws_error(&self) {
+        self.inner.lock().await.last_ws_error = None;
     }
 
-    fn record_ws_error(&self, message: impl Into<String>) {
-        self.inner
-            .lock()
-            .expect("runtime mutex poisoned")
-            .last_ws_error = Some(message.into());
+    async fn record_ws_error(&self, message: impl Into<String>) {
+        self.inner.lock().await.last_ws_error = Some(message.into());
     }
 
-    fn record_ws_message(&self) {
-        self.inner
-            .lock()
-            .expect("runtime mutex poisoned")
-            .last_ws_message_at = Some(Utc::now());
+    async fn record_ws_message(&self) {
+        self.inner.lock().await.last_ws_message_at = Some(Utc::now());
     }
 
-    fn record_ticker_price(&self, market_ticker: &str, yes_bid_dollars: String) {
-        let mut guard = self.inner.lock().expect("runtime mutex poisoned");
+    async fn record_ticker_price(&self, market_ticker: &str, yes_bid_dollars: String) {
+        let mut guard = self.inner.lock().await;
         let market = guard.markets.entry(market_ticker.to_string()).or_default();
         market.last_yes_bid_dollars = Some(yes_bid_dollars);
         market.last_updated_at = Some(Utc::now());
@@ -317,8 +300,8 @@ async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
         status: "ok",
         started_at: state.started_at,
         config: state.config.clone(),
-        runtime: state.runtime.snapshot(),
-        persisted: state.persisted.snapshot(),
+        runtime: state.runtime.snapshot().await,
+        persisted: state.persisted.snapshot().await,
     })
 }
 
@@ -346,13 +329,13 @@ async fn run_ws_loop(
         .await
         {
             Ok(()) => {
-                runtime.set_ws_connected(false);
-                runtime.record_ws_error("websocket session ended");
+                runtime.set_ws_connected(false).await;
+                runtime.record_ws_error("websocket session ended").await;
                 warn!("kalshi websocket session ended; reconnecting");
             }
             Err(err) => {
-                runtime.set_ws_connected(false);
-                runtime.record_ws_error(err.to_string());
+                runtime.set_ws_connected(false).await;
+                runtime.record_ws_error(err.to_string()).await;
                 warn!("kalshi websocket session failed: {err:#}");
                 let message = format!("Kalshi websocket disconnected: {}", err);
                 if let Err(notify_err) = discord.notify(&message, Some("warning")).await {
@@ -383,8 +366,8 @@ async fn run_ws_session(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let mut socket = kalshi.connect_websocket().await?;
-    runtime.set_ws_connected(true);
-    runtime.clear_ws_error();
+    runtime.set_ws_connected(true).await;
+    runtime.clear_ws_error().await;
 
     let subscribe = json!({
         "id": 1,
@@ -419,7 +402,7 @@ async fn run_ws_session(
 
                 match message_result {
                     Ok(Message::Text(text)) => {
-                        runtime.record_ws_message();
+                        runtime.record_ws_message().await;
                         handle_ws_text(config, kalshi, discord, persisted, runtime, &text).await;
                     }
                     Ok(Message::Ping(payload)) => {
@@ -441,7 +424,7 @@ async fn run_ws_session(
         }
     }
 
-    runtime.set_ws_connected(false);
+    runtime.set_ws_connected(false).await;
     Ok(())
 }
 
@@ -479,7 +462,7 @@ async fn handle_ws_text(
                 process_ticker_update(config, kalshi, discord, persisted, runtime, envelope.msg)
                     .await
             {
-                runtime.record_ws_error(err.to_string());
+                runtime.record_ws_error(err.to_string()).await;
                 warn!("ticker processing failed: {err:#}");
             }
         }
@@ -493,7 +476,7 @@ async fn handle_ws_text(
                 .msg
                 .msg
                 .unwrap_or_else(|| "unknown websocket error".to_string());
-            runtime.record_ws_error(format!("code={} msg={}", code, message));
+            runtime.record_ws_error(format!("code={} msg={}", code, message)).await;
             warn!("kalshi websocket returned error code {}: {}", code, message);
         }
         _ => {}
@@ -518,15 +501,15 @@ async fn process_ticker_update(
     };
 
     let yes_bid_str = format_decimal_4(yes_bid);
-    runtime.record_ticker_price(market_ticker, yes_bid_str.clone());
+    runtime.record_ticker_price(market_ticker, yes_bid_str.clone()).await;
 
     let is_above = yes_bid >= config.trigger_yes_bid_dollars;
-    if !persisted.has_market(market_ticker) {
+    if !persisted.has_market(market_ticker).await {
         persisted.update_market(market_ticker, |state| {
             state.was_above_threshold = is_above;
             state.last_yes_bid_dollars = Some(yes_bid_str.clone());
             state.last_action = Some("initialized market state".to_string());
-        })?;
+        }).await?;
         info!(
             "initialized state for {} at yes_bid={} (above_threshold={})",
             market_ticker, yes_bid_str, is_above
@@ -534,7 +517,7 @@ async fn process_ticker_update(
         return Ok(());
     }
 
-    let previous = persisted.market_snapshot(market_ticker);
+    let previous = persisted.market_snapshot(market_ticker).await;
 
     if !previous.was_above_threshold && is_above {
         let threshold = config.trigger_threshold_string();
@@ -564,7 +547,7 @@ async fn process_ticker_update(
             state.last_triggered_at = Some(Utc::now());
             state.last_client_order_id = client_order_id.clone();
             state.last_action = Some(action_summary.clone());
-        })?;
+        }).await?;
         return Ok(());
     }
 
@@ -583,7 +566,7 @@ async fn process_ticker_update(
             state.was_above_threshold = false;
             state.last_yes_bid_dollars = Some(yes_bid_str.clone());
             state.last_action = Some("trigger re-armed".to_string());
-        })?;
+        }).await?;
     }
 
     Ok(())

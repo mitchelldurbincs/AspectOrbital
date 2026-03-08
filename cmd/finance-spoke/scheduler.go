@@ -52,7 +52,7 @@ func (s *scheduler) RunDue(ctx context.Context, now time.Time) error {
 		return nil
 	}
 
-	err := s.sendSummary(ctx, latestSchedule, weekKey)
+	err := s.sendSummary(ctx, now, latestSchedule, weekKey)
 	if markErr := s.state.MarkRun(weekKey, now.UTC(), err); markErr != nil {
 		s.log.Printf("state update failed after summary run: %v", markErr)
 	}
@@ -67,7 +67,7 @@ func (s *scheduler) RunNow(ctx context.Context, now time.Time) error {
 
 	latestSchedule := s.latestScheduleAtOrBefore(now)
 	weekKey := weekKeyForSchedule(latestSchedule)
-	err := s.sendSummary(ctx, latestSchedule, weekKey)
+	err := s.sendSummary(ctx, now, latestSchedule, weekKey)
 	if markErr := s.state.MarkRun(weekKey, now.UTC(), err); markErr != nil {
 		s.log.Printf("state update failed after manual run: %v", markErr)
 	}
@@ -75,7 +75,7 @@ func (s *scheduler) RunNow(ctx context.Context, now time.Time) error {
 	return err
 }
 
-func (s *scheduler) sendSummary(ctx context.Context, scheduledAt time.Time, weekKey string) error {
+func (s *scheduler) sendSummary(ctx context.Context, now time.Time, scheduledAt time.Time, weekKey string) error {
 	windowEnd := scheduledAt
 	windowStart := scheduledAt.AddDate(0, 0, -s.cfg.SummaryLookbackDays)
 
@@ -99,7 +99,7 @@ func (s *scheduler) sendSummary(ctx context.Context, scheduledAt time.Time, week
 
 	if len(summary.Charges) == 0 && !s.cfg.SummarySendEmpty {
 		s.log.Printf("skipping empty weekly summary for week %s", weekKey)
-		return s.state.MarkSummarySent(weekKey, time.Now().UTC(), 0, 0)
+		return s.state.MarkSummarySent(weekKey, now.UTC(), 0, 0)
 	}
 
 	message := renderWeeklySummaryMessage(s.cfg.SummaryTitle, summary, s.location, s.cfg.SummaryMaxItems)
@@ -114,7 +114,7 @@ func (s *scheduler) sendSummary(ctx context.Context, scheduledAt time.Time, week
 
 	s.log.Printf("sent weekly subscription summary for week %s with %d item(s)", weekKey, len(summary.Charges))
 
-	return s.state.MarkSummarySent(weekKey, time.Now().UTC(), len(summary.Charges), summary.TotalAmount)
+	return s.state.MarkSummarySent(weekKey, now.UTC(), len(summary.Charges), summary.TotalAmount)
 }
 
 func (s *scheduler) nextScheduleAfter(now time.Time) time.Time {
