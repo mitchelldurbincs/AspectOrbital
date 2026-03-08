@@ -20,6 +20,8 @@ If `beeminder-spoke` is running, `discord-hub` can auto-register spoke-owned sla
 - `SPOKE_COMMANDS_URL` (default `http://127.0.0.1:8090/control/commands`)
 - `SPOKE_COMMAND_URL` (default `http://127.0.0.1:8090/control/command`)
 
+The spoke publishes command names, descriptions, and option metadata. `discord-hub` maps those directly into Discord slash commands and forwards interaction options back to the spoke.
+
 Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
 
 ## Notify endpoint

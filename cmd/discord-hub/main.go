@@ -293,12 +293,12 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 			return
 		}
 
-		argument := interactionStringOption(commandData.Options, spokeCommandArgumentOption)
+		options := interactionOptionValues(commandData.Options)
 
 		execCtx, cancel := context.WithTimeout(context.Background(), spokeCommandHTTPTimeout)
 		defer cancel()
 
-		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, argument)
+		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, options)
 		if err != nil {
 			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
 			if respondErr := respondEphemeral(s, i.Interaction, truncateForDiscord(spokeCommandFailurePrefix+err.Error())); respondErr != nil {
@@ -323,21 +323,42 @@ func respondEphemeral(session *discordgo.Session, interaction *discordgo.Interac
 	})
 }
 
-func interactionStringOption(options []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+func interactionOptionValues(options []*discordgo.ApplicationCommandInteractionDataOption) map[string]any {
+	if len(options) == 0 {
+		return nil
+	}
+
+	values := make(map[string]any, len(options))
+
 	for _, option := range options {
-		if option.Name != name {
+		name := strings.ToLower(strings.TrimSpace(option.Name))
+		if name == "" {
 			continue
 		}
 
-		value, ok := option.Value.(string)
-		if !ok {
-			return ""
+		switch value := option.Value.(type) {
+		case string:
+			values[name] = strings.TrimSpace(value)
+		case bool:
+			values[name] = value
+		case int:
+			values[name] = value
+		case int64:
+			values[name] = value
+		case float64:
+			values[name] = value
+		default:
+			if option.Value != nil {
+				values[name] = fmt.Sprint(option.Value)
+			}
 		}
-
-		return strings.TrimSpace(value)
 	}
 
-	return ""
+	if len(values) == 0 {
+		return nil
+	}
+
+	return values
 }
 
 func upsertPingCommand(session *discordgo.Session, appID, guildID string) (*discordgo.ApplicationCommand, error) {
@@ -350,32 +371,9 @@ func upsertPingCommand(session *discordgo.Session, appID, guildID string) (*disc
 }
 
 func upsertSpokeCommands(session *discordgo.Session, appID, guildID string, bridge *spokeCommandBridge) error {
-	commands := bridge.BuildDiscordCommands()
-	desired := make(map[string]struct{}, len(commands))
-
-	for _, command := range commands {
-		desired[command.Name] = struct{}{}
-
+	for _, command := range bridge.BuildDiscordCommands() {
 		if _, err := upsertCommand(session, appID, guildID, command); err != nil {
 			return err
-		}
-	}
-
-	existingCommands, err := session.ApplicationCommands(appID, guildID)
-	if err != nil {
-		return fmt.Errorf("could not list existing commands for spoke cleanup: %w", err)
-	}
-
-	for _, existing := range existingCommands {
-		if existing.Description != spokeCommandDescription {
-			continue
-		}
-		if _, ok := desired[existing.Name]; ok {
-			continue
-		}
-
-		if err := session.ApplicationCommandDelete(appID, guildID, existing.ID); err != nil {
-			return fmt.Errorf("could not delete stale spoke command /%s: %w", existing.Name, err)
 		}
 	}
 

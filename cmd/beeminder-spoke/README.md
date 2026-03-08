@@ -48,9 +48,15 @@ curl -X POST http://127.0.0.1:8090/control/snooze \
 curl -X POST http://127.0.0.1:8090/control/command \
   -H "Content-Type: application/json" \
   -d '{"command":"status"}'
+
+curl -X POST http://127.0.0.1:8090/control/command \
+  -H "Content-Type: application/json" \
+  -d '{"command":"snooze","options":{"duration":"1h"}}'
 ```
 
 Command names are configurable via env (`BEEMINDER_COMMAND_*`), so Discord slash mappings can stay outside `discord-hub` and be owned by the Beeminder spoke.
+
+`GET /control/commands` returns a command catalog with command descriptions and option metadata. `discord-hub` reads this catalog and mirrors it as slash commands.
 
 `discord-hub` can discover these names dynamically via:
 

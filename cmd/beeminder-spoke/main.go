@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +20,14 @@ import (
 	applog "personal-infrastructure/pkg/logger"
 )
 
-const cycleTimeout = 30 * time.Second
+const (
+	cycleTimeout               = 30 * time.Second
+	commandCatalogVersion      = 1
+	commandCatalogService      = "beeminder-spoke"
+	snoozeDurationOptionName   = "duration"
+	snoozeDurationOptionType   = "string"
+	snoozeDurationOptionPrompt = "Examples: 15m, 1h"
+)
 
 func main() {
 	logger := applog.New("beeminder-spoke")
@@ -219,7 +227,7 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string][]string{"commands": a.cfg.Commands.All()})
+	writeJSON(w, http.StatusOK, commandCatalogForConfig(a.cfg))
 }
 
 func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
@@ -314,11 +322,16 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 		return map[string]any{
 			"status":       "ok",
 			"command":      a.cfg.Commands.Started,
-			"message":      fmt.Sprintf("Acknowledged. Reminders paused until %s.", until.Format(time.Kitchen)),
+			"message":      fmt.Sprintf("Got it. Paused reminders until %s.", formatClockInLocation(until, a.location)),
 			"snoozedUntil": until,
 		}, http.StatusOK, nil
 	case a.cfg.Commands.Snooze:
-		duration, err := parseSnoozeArgument(request.Argument, a.cfg.DefaultSnooze)
+		durationInput := request.optionString(snoozeDurationOptionName)
+		if durationInput == "" {
+			durationInput = request.Argument
+		}
+
+		duration, err := parseSnoozeArgument(durationInput, a.cfg.DefaultSnooze)
 		if err != nil {
 			return nil, http.StatusBadRequest, err
 		}
@@ -327,7 +340,7 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 		return map[string]any{
 			"status":       "ok",
 			"command":      a.cfg.Commands.Snooze,
-			"message":      fmt.Sprintf("Snoozed reminders for %s (until %s).", duration, until.Format(time.Kitchen)),
+			"message":      fmt.Sprintf("Snoozed reminders for %s (until %s).", duration, formatClockInLocation(until, a.location)),
 			"duration":     duration.String(),
 			"snoozedUntil": until,
 		}, http.StatusOK, nil
@@ -343,7 +356,7 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 		return map[string]any{
 			"status":  "ok",
 			"command": a.cfg.Commands.Status,
-			"message": summarizeStatus(status),
+			"message": summarizeStatus(status, a.location),
 			"data":    status,
 		}, http.StatusOK, nil
 	default:
@@ -352,12 +365,93 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 }
 
 type commandRequest struct {
-	Command  string `json:"command"`
-	Argument string `json:"argument"`
+	Command  string         `json:"command"`
+	Argument string         `json:"argument"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 func (c commandRequest) normalizedCommand() string {
 	return normalizeCommand(c.Command)
+}
+
+func (c commandRequest) optionString(name string) string {
+	if c.Options == nil {
+		return ""
+	}
+
+	raw, ok := c.Options[name]
+	if !ok {
+		return ""
+	}
+
+	switch value := raw.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case json.Number:
+		return strings.TrimSpace(value.String())
+	case float64:
+		return strings.TrimSpace(strconv.FormatFloat(value, 'f', -1, 64))
+	case bool:
+		return strings.TrimSpace(strconv.FormatBool(value))
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+type commandCatalogResponse struct {
+	Version  int                 `json:"version"`
+	Service  string              `json:"service"`
+	Commands []commandDefinition `json:"commands"`
+	Names    []string            `json:"commandNames"`
+}
+
+type commandDefinition struct {
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	Options     []commandOptionDefinition `json:"options,omitempty"`
+}
+
+type commandOptionDefinition struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+}
+
+func commandCatalogForConfig(cfg config) commandCatalogResponse {
+	commands := []commandDefinition{
+		{
+			Name:        cfg.Commands.Status,
+			Description: "Show progress and next reminder time",
+		},
+		{
+			Name:        cfg.Commands.Snooze,
+			Description: "Pause reminders for a duration",
+			Options: []commandOptionDefinition{
+				{
+					Name:        snoozeDurationOptionName,
+					Type:        snoozeDurationOptionType,
+					Description: snoozeDurationOptionPrompt,
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        cfg.Commands.Started,
+			Description: "Pause reminders while you get started",
+		},
+		{
+			Name:        cfg.Commands.Resume,
+			Description: "Resume reminders immediately",
+		},
+	}
+
+	return commandCatalogResponse{
+		Version:  commandCatalogVersion,
+		Service:  commandCatalogService,
+		Commands: commands,
+		Names:    cfg.Commands.All(),
+	}
 }
 
 type snoozeRequest struct {
@@ -373,7 +467,7 @@ func parseSnoozeArgument(raw string, fallback time.Duration) (time.Duration, err
 
 	duration, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("invalid duration %q; try values like 15m or 1h", value)
 	}
 	if duration <= 0 {
 		return 0, errors.New("snooze duration must be positive")
@@ -382,37 +476,92 @@ func parseSnoozeArgument(raw string, fallback time.Duration) (time.Duration, err
 	return duration, nil
 }
 
-func summarizeStatus(status reminderStatus) string {
+func summarizeStatus(status reminderStatus, location *time.Location) string {
 	if status.Completed {
 		return "Goal complete for today. No reminders are active."
 	}
 
-	if status.SnoozedUntil != nil {
-		return fmt.Sprintf("Reminders are snoozed until %s.", status.SnoozedUntil.Local().Format(time.Kitchen))
-	}
-
 	if status.LastSnapshot == nil {
+		if status.SnoozedUntil != nil {
+			return fmt.Sprintf("No snapshot yet. Reminders are snoozed until %s.", formatClockInLocation(*status.SnoozedUntil, location))
+		}
+
 		return "No Beeminder snapshot yet."
 	}
 
-	remaining := status.LastSnapshot.DailyTarget - status.LastSnapshot.TodayProgress
+	done := status.LastSnapshot.TodayProgress
+	target := status.LastSnapshot.DailyTarget
+	remaining := target - done
 	if remaining < 0 {
 		remaining = 0
 	}
 
+	unit := strings.TrimSpace(status.LastSnapshot.GoalUnits)
+	if unit == "" {
+		unit = "units"
+	}
+	decimals := 2
+	if looksLikeHours(unit) {
+		done *= 60
+		target *= 60
+		remaining *= 60
+		unit = "min"
+		decimals = 1
+	}
+
 	message := fmt.Sprintf(
-		"Progress %.2f/%.2f %s for today (%.2f left).",
-		status.LastSnapshot.TodayProgress,
-		status.LastSnapshot.DailyTarget,
-		status.LastSnapshot.GoalUnits,
-		remaining,
+		"Today: %s/%s %s, %s %s left.",
+		formatFloat(done, decimals),
+		formatFloat(target, decimals),
+		unit,
+		formatFloat(remaining, decimals),
+		unit,
 	)
 
-	if status.NextReminderAt != nil {
-		message += fmt.Sprintf(" Next reminder at %s.", status.NextReminderAt.Local().Format(time.Kitchen))
+	nextPingAt := resolveNextPingTime(status)
+	if !nextPingAt.IsZero() {
+		message += fmt.Sprintf(" Next ping: %s.", formatClockInLocation(nextPingAt, location))
 	}
 
 	return message
+}
+
+func resolveNextPingTime(status reminderStatus) time.Time {
+	if status.SnoozedUntil != nil {
+		return *status.SnoozedUntil
+	}
+
+	if status.NextReminderAt != nil {
+		return *status.NextReminderAt
+	}
+
+	if status.LastSnapshot == nil {
+		return time.Time{}
+	}
+
+	if status.LastSnapshot.LocalNow.Before(status.LastSnapshot.ReminderStart) {
+		return status.LastSnapshot.ReminderStart
+	}
+
+	if status.LastReminderAt != nil && status.LastSnapshot.ReminderWindow > 0 {
+		return status.LastReminderAt.Add(status.LastSnapshot.ReminderWindow)
+	}
+
+	return status.LastSnapshot.LocalNow
+}
+
+func formatClockInLocation(value time.Time, location *time.Location) string {
+	if location != nil {
+		value = value.In(location)
+	} else {
+		value = value.Local()
+	}
+
+	return value.Format("3:04 PM MST")
+}
+
+func formatFloat(value float64, decimals int) string {
+	return strconv.FormatFloat(value, 'f', decimals, 64)
 }
 
 func decodeJSONBody(r *http.Request, out any) error {

@@ -32,6 +32,23 @@ services:
     networks:
       - personal-infra
 
+  finance-spoke:
+    build:
+      context: ..
+      dockerfile: cmd/finance-spoke/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      FINANCE_SPOKE_HTTP_ADDR: 0.0.0.0:8091
+      FINANCE_HUB_NOTIFY_URL: http://discord-hub:8080/notify
+    depends_on:
+      - discord-hub
+    ports:
+      - "8091:8091"
+    restart: unless-stopped
+    networks:
+      - personal-infra
+
 networks:
   personal-infra:
     name: personal-infra
