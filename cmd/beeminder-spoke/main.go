@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"personal-infrastructure/pkg/hubnotify"
+	"personal-infrastructure/pkg/lifecycle"
 	applog "personal-infrastructure/pkg/logger"
 )
 
@@ -26,7 +29,12 @@ const (
 
 func main() {
 	logger := applog.New("beeminder-spoke")
+	if err := run(logger); err != nil {
+		logger.Printf("beeminder-spoke exiting: %v", err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	for _, envFile := range []string{"cmd/beeminder-spoke/.env", ".env"} {
 		if err := godotenv.Load(envFile); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
@@ -37,7 +45,7 @@ func main() {
 
 	cfg, err := loadConfig()
 	if err != nil {
-		logger.Fatalf("invalid configuration: %v", err)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
@@ -50,12 +58,12 @@ func main() {
 
 	user, err := beeminder.GetUser(bootCtx)
 	if err != nil {
-		logger.Fatalf("failed to load beeminder user profile: %v", err)
+		return fmt.Errorf("failed to load beeminder user profile: %w", err)
 	}
 
 	location, err := time.LoadLocation(user.Timezone)
 	if err != nil {
-		logger.Fatalf("failed to load beeminder timezone %q: %v", user.Timezone, err)
+		return fmt.Errorf("failed to load beeminder timezone %q: %w", user.Timezone, err)
 	}
 
 	app := &spokeApp{
@@ -101,26 +109,15 @@ func main() {
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
 
 	logger.Printf("tracking Beeminder goal %q for user %q", cfg.BeeminderGoalSlug, cfg.BeeminderUsername)
 
-	running := true
-	for running {
-		select {
-		case <-ticker.C:
-			if err := app.runCycle(context.Background()); err != nil {
-				logger.Printf("beeminder check failed: %v", err)
-			}
-		case sig := <-signalCh:
-			logger.Printf("received signal: %s", sig)
-			running = false
-		case err := <-httpErrCh:
-			if err != nil {
-				logger.Fatalf("control API failed: %v", err)
-			}
-			running = false
+	exitErr := lifecycle.WaitForExit(signalCh, httpErrCh, ticker.C, func() {
+		if err := app.runCycle(context.Background()); err != nil {
+			logger.Printf("beeminder check failed: %v", err)
 		}
-	}
+	})
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
@@ -130,4 +127,5 @@ func main() {
 	}
 
 	logger.Println("beeminder-spoke stopped")
+	return exitErr
 }
