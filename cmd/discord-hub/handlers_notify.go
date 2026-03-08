@@ -1,15 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+
+	"personal-infrastructure/pkg/httpjson"
 )
 
 type notifyPayload struct {
@@ -35,19 +34,9 @@ func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxBodyBytes := int64(1 << 20)
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	defer r.Body.Close()
-
 	var payload notifyPayload
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		h.writeBadRequest(w, fmt.Sprintf("invalid json payload: %v", err))
-		return
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		h.writeBadRequest(w, "invalid json payload: only one json object is allowed")
+	if err := httpjson.DecodeStrictJSONBody(r, &payload, 1<<20); err != nil {
+		h.writeBadRequest(w, err.Error())
 		return
 	}
 
@@ -73,9 +62,7 @@ func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	_, _ = io.WriteString(w, `{"status":"sent"}`)
+	httpjson.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
 }
 
 func (h *hubHandler) writeBadRequest(w http.ResponseWriter, message string) {
