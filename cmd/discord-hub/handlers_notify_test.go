@@ -166,3 +166,16 @@ func TestNotifyDiscordFailureReturns502(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadGateway, rec.Code)
 	}
 }
+
+func TestNotifyRejectsNonPostRequests(t *testing.T) {
+	h := testHubHandler(&fakeMessageSender{})
+
+	req := httptest.NewRequest(http.MethodGet, "/notify", nil)
+	rec := httptest.NewRecorder()
+
+	h.notify(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}

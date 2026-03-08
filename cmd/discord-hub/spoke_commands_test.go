@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -192,5 +193,15 @@ func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
 	want := []string{"resume", "status"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("unexpected command order\nwant: %#v\ngot:  %#v", want, names)
+	}
+}
+
+func TestFormatSpokeCommandFailure(t *testing.T) {
+	if got := formatSpokeCommandFailure(nil); got != "" {
+		t.Fatalf("expected empty string for nil error, got %q", got)
+	}
+
+	if got := formatSpokeCommandFailure(errors.New("boom")); got != "Command failed: boom" {
+		t.Fatalf("unexpected failure formatting: %q", got)
 	}
 }

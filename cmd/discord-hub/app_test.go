@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -28,5 +30,24 @@ func TestResolveApplicationIDReturnsErrorWhenUnavailable(t *testing.T) {
 	_, err := resolveApplicationID(&discordgo.Session{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestNewHTTPServerRegistersHealthAndNotifyHandlers(t *testing.T) {
+	handler := testHubHandler(&fakeMessageSender{})
+	server := newHTTPServer("127.0.0.1:0", handler)
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	healthRec := httptest.NewRecorder()
+	server.Handler.ServeHTTP(healthRec, healthReq)
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("expected /healthz status %d, got %d", http.StatusOK, healthRec.Code)
+	}
+
+	notifyReq := httptest.NewRequest(http.MethodGet, "/notify", nil)
+	notifyRec := httptest.NewRecorder()
+	server.Handler.ServeHTTP(notifyRec, notifyReq)
+	if notifyRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected /notify status %d for GET, got %d", http.StatusMethodNotAllowed, notifyRec.Code)
 	}
 }

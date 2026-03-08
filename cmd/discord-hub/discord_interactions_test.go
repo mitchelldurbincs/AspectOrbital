@@ -124,3 +124,62 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 		t.Fatalf("expected forwarded argument 30m, got %q", captured.Argument)
 	}
 }
+
+func TestInteractionHandlerRespondsWhenCommandUnavailable(t *testing.T) {
+	var messages []string
+
+	prev := respondEphemeralFunc
+	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+		messages = append(messages, message)
+		return nil
+	}
+	t.Cleanup(func() {
+		respondEphemeralFunc = prev
+	})
+
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil)
+	handler(nil, commandInteraction("status", nil))
+
+	if len(messages) != 1 {
+		t.Fatalf("expected exactly one response, got %d", len(messages))
+	}
+	if messages[0] != "That command is not available right now. Try again in a moment." {
+		t.Fatalf("unexpected unavailable-command message: %q", messages[0])
+	}
+}
+
+func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "execution failed", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	bridge := &spokeCommandBridge{
+		log:        log.New(io.Discard, "", 0),
+		httpClient: server.Client(),
+		commandURL: server.URL,
+		commands: map[string]spokeCommandSpec{
+			"status": {Name: "status"},
+		},
+	}
+
+	var messages []string
+	prev := respondEphemeralFunc
+	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+		messages = append(messages, message)
+		return nil
+	}
+	t.Cleanup(func() {
+		respondEphemeralFunc = prev
+	})
+
+	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)
+	handler(nil, commandInteraction("status", nil))
+
+	if len(messages) != 1 {
+		t.Fatalf("expected one response message, got %#v", messages)
+	}
+	if messages[0] != "Command failed: execution failed" {
+		t.Fatalf("unexpected failure message: %q", messages[0])
+	}
+}

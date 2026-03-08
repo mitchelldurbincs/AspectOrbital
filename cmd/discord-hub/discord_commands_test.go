@@ -15,6 +15,7 @@ type fakeCommandRegistrar struct {
 	editErr   error
 	createErr error
 
+	listCalls   int
 	editCalls   int
 	createCalls int
 
@@ -24,6 +25,8 @@ type fakeCommandRegistrar struct {
 }
 
 func (f *fakeCommandRegistrar) ApplicationCommands(_ string, _ string, _ ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {
+	f.listCalls++
+
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -102,6 +105,68 @@ func TestUpsertCommandReturnsHelpfulListError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "could not list existing commands for /ping") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpsertPingCommandCreatesPingSlashCommand(t *testing.T) {
+	client := &fakeCommandRegistrar{}
+
+	created, err := upsertPingCommand(client, "app", "guild")
+	if err != nil {
+		t.Fatalf("upsertPingCommand returned error: %v", err)
+	}
+
+	if created == nil {
+		t.Fatal("expected created command, got nil")
+	}
+	if created.Name != pingCommandName {
+		t.Fatalf("expected command name %q, got %q", pingCommandName, created.Name)
+	}
+	if created.Description == "" {
+		t.Fatal("expected non-empty ping command description")
+	}
+	if client.createCalls != 1 {
+		t.Fatalf("expected one create call, got %d", client.createCalls)
+	}
+}
+
+func TestUpsertSpokeCommandsReusesListedCommands(t *testing.T) {
+	client := &fakeCommandRegistrar{
+		existing: []*discordgo.ApplicationCommand{{ID: "status-1", Name: "status", Description: "old"}},
+	}
+
+	bridge := &spokeCommandBridge{
+		commands: map[string]spokeCommandSpec{
+			"status": {Name: "status", Description: "new status"},
+			"resume": {Name: "resume", Description: "resume"},
+		},
+	}
+
+	err := upsertSpokeCommands(client, "app", "guild", bridge)
+	if err != nil {
+		t.Fatalf("upsertSpokeCommands returned error: %v", err)
+	}
+
+	if client.listCalls != 1 {
+		t.Fatalf("expected one list call for spoke sync, got %d", client.listCalls)
+	}
+	if client.editCalls != 1 {
+		t.Fatalf("expected one edit call for existing status command, got %d", client.editCalls)
+	}
+	if client.createCalls != 1 {
+		t.Fatalf("expected one create call for new resume command, got %d", client.createCalls)
+	}
+}
+
+func TestUpsertSpokeCommandsReturnsListError(t *testing.T) {
+	client := &fakeCommandRegistrar{listErr: errors.New("listing failed")}
+
+	err := upsertSpokeCommands(client, "app", "guild", &spokeCommandBridge{commands: map[string]spokeCommandSpec{"status": {Name: "status"}}})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not list existing commands for spoke sync") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
