@@ -15,16 +15,52 @@ go run ./cmd/discord-hub
 
 `discord-hub` loads env files in this order: `cmd/discord-hub/.env`, then `.env` (legacy fallback).
 
-## Beeminder-spoke command discovery
+## Spoke command discovery
 
-If `beeminder-spoke` is running, `discord-hub` can auto-register spoke-owned slash commands by reading:
+`discord-hub` can auto-register spoke-owned slash commands.
+
+### Single-service (legacy) configuration
+
+Use these env vars to discover commands from one spoke:
 
 - `SPOKE_COMMANDS_URL` (default `http://127.0.0.1:8090/control/commands`)
 - `SPOKE_COMMAND_URL` (default `http://127.0.0.1:8090/control/command`)
 
-The spoke publishes command names, descriptions, and option metadata. `discord-hub` maps those directly into Discord slash commands and forwards interaction options back to the spoke.
+Example:
+
+```bash
+SPOKE_COMMANDS_URL=http://beeminder-spoke:8090/control/commands
+SPOKE_COMMAND_URL=http://beeminder-spoke:8090/control/command
+```
+
+### Multi-service configuration (`SPOKE_COMMAND_SERVICES`)
+
+Use `SPOKE_COMMAND_SERVICES` to load commands from multiple spokes. It must be a JSON array with `name`, `commands_url`, and `execute_url` per service.
+
+Example with two services:
+
+```bash
+SPOKE_COMMAND_SERVICES='[
+  {"name":"beeminder-spoke","commands_url":"http://beeminder-spoke:8090/control/commands","execute_url":"http://beeminder-spoke:8090/control/command"},
+  {"name":"finance-spoke","commands_url":"http://finance-spoke:8091/control/commands","execute_url":"http://finance-spoke:8091/control/command"}
+]'
+```
+
+Example with three services:
+
+```bash
+SPOKE_COMMAND_SERVICES='[
+  {"name":"beeminder-spoke","commands_url":"http://beeminder-spoke:8090/control/commands","execute_url":"http://beeminder-spoke:8090/control/command"},
+  {"name":"finance-spoke","commands_url":"http://finance-spoke:8091/control/commands","execute_url":"http://finance-spoke:8091/control/command"},
+  {"name":"kalshi-spoke","commands_url":"http://kalshi-spoke:8092/control/commands","execute_url":"http://kalshi-spoke:8092/control/command"}
+]'
+```
 
 Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
+
+### `accountability-spoke` status
+
+`accountability-spoke` currently exists as an experimental spoke implementation and is **not yet part of the supported Docker Compose deployment set**. Until it is promoted to supported status (including container/deployment wiring), do not include it in `SPOKE_COMMAND_SERVICES` for shared environments.
 
 ## Notify endpoint
 
