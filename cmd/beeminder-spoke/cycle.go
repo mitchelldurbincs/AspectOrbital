@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"time"
+
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 func (a *spokeApp) runCycle(parentCtx context.Context) error {
@@ -12,7 +14,7 @@ func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	nowUTC := time.Now().UTC()
 	nowLocal := nowUTC.In(a.location)
 
-	goal, err := a.beeminder.GetGoal(ctx)
+	goal, err := a.beeminder.GetGoal(ctx, a.cfg.BeeminderGoalSlug)
 	if err != nil {
 		return err
 	}
@@ -23,7 +25,7 @@ func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	}
 
 	daystamp := beeminderDaystamp(nowLocal, goal.Deadline)
-	datapoints, err := a.beeminder.GetDatapointsForDay(ctx, daystamp)
+	datapoints, err := a.beeminder.GetDatapointsForDay(ctx, a.cfg.BeeminderGoalSlug, daystamp)
 	if err != nil {
 		return err
 	}
@@ -50,7 +52,7 @@ func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	}
 
 	message := renderReminderMessage(snapshot)
-	if err := a.hub.Notify(ctx, hubNotifyRequest{
+	if err := a.hub.Notify(ctx, hubnotify.NotifyRequest{
 		TargetChannel: a.cfg.NotifyTargetChannel,
 		Message:       message,
 		Severity:      a.cfg.NotifySeverity,

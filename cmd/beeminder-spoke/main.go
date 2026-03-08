@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"personal-infrastructure/pkg/hubnotify"
 	applog "personal-infrastructure/pkg/logger"
 )
 
@@ -41,7 +42,7 @@ func main() {
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
 	beeminder := newBeeminderClient(cfg, httpClient)
-	hub := newHubClient(cfg, httpClient)
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, httpClient)
 	engine := newReminderEngine(cfg)
 
 	bootCtx, bootCancel := context.WithTimeout(context.Background(), cycleTimeout)

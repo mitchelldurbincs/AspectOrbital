@@ -45,6 +45,76 @@ type CreateDatapointRequest struct {
 	RequestID string
 }
 
+type Option func(*Client)
+
+func WithBaseURL(baseURL string) Option {
+	return func(c *Client) {
+		trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+		if trimmed != "" {
+			c.baseURL = trimmed
+		}
+	}
+}
+
+func WithAuthToken(token string) Option {
+	return func(c *Client) {
+		c.authToken = strings.TrimSpace(token)
+	}
+}
+
+func WithUsername(username string) Option {
+	return func(c *Client) {
+		c.username = strings.TrimSpace(username)
+	}
+}
+
+func WithTimeout(timeout time.Duration) Option {
+	return func(c *Client) {
+		if timeout > 0 {
+			c.httpClient.Timeout = timeout
+		}
+	}
+}
+
+func WithDatapointsPerPage(perPage int) Option {
+	return func(c *Client) {
+		if perPage > 0 {
+			c.datapointsPerPage = perPage
+		}
+	}
+}
+
+func WithMaxDatapointPages(maxPages int) Option {
+	return func(c *Client) {
+		if maxPages > 0 {
+			c.maxDatapointPages = maxPages
+		}
+	}
+}
+
+func WithHTTPClient(httpClient *http.Client) Option {
+	return func(c *Client) {
+		if httpClient != nil {
+			c.httpClient = httpClient
+		}
+	}
+}
+
+func NewClient(options ...Option) *Client {
+	client := &Client{
+		baseURL:           defaultBaseURL,
+		datapointsPerPage: defaultDatapointsPerPage,
+		maxDatapointPages: defaultMaxDatapointPages,
+		httpClient:        &http.Client{Timeout: defaultTimeout},
+	}
+
+	for _, option := range options {
+		option(client)
+	}
+
+	return client
+}
+
 type User struct {
 	Username string `json:"username"`
 	Timezone string `json:"timezone"`
@@ -66,26 +136,6 @@ type Datapoint struct {
 	Daystamp  string  `json:"daystamp"`
 	Value     float64 `json:"value"`
 	IsDummy   bool    `json:"is_dummy"`
-}
-
-func NewClient(baseURL, authToken, username string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
-	}
-
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		base = defaultBaseURL
-	}
-
-	return &Client{
-		baseURL:           base,
-		authToken:         strings.TrimSpace(authToken),
-		username:          strings.TrimSpace(username),
-		datapointsPerPage: defaultDatapointsPerPage,
-		maxDatapointPages: defaultMaxDatapointPages,
-		httpClient:        httpClient,
-	}
 }
 
 func (c *Client) GetUser(ctx context.Context) (User, error) {

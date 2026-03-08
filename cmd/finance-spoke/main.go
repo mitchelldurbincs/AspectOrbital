@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"personal-infrastructure/pkg/httpjson"
+	"personal-infrastructure/pkg/hubnotify"
 	applog "personal-infrastructure/pkg/logger"
 )
 
@@ -42,7 +43,7 @@ func main() {
 	}
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
-	hub := newHubClient(cfg, httpClient)
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, httpClient)
 	plaid := newPlaidClient(cfg, httpClient)
 	stateStore, err := newStateStore(cfg.StateFilePath)
 	if err != nil {
