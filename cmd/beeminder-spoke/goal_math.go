@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/beeminder"
 )
 
 const daystampFormat = "20060102"
@@ -15,7 +17,7 @@ func beeminderDaystamp(now time.Time, deadlineSeconds int) string {
 	return shifted.Format(daystampFormat)
 }
 
-func dailyTargetForGoal(goal beeminderGoal) (float64, error) {
+func dailyTargetForGoal(goal beeminder.Goal) (float64, error) {
 	if goal.Rate == nil {
 		return 0, errors.New("beeminder goal does not provide a usable rate")
 	}
@@ -41,8 +43,8 @@ func dailyTargetForGoal(goal beeminderGoal) (float64, error) {
 	}
 }
 
-func aggregateDayProgress(datapoints []beeminderDatapoint, aggDay string) float64 {
-	clean := make([]beeminderDatapoint, 0, len(datapoints))
+func aggregateDayProgress(datapoints []beeminder.Datapoint, aggDay string) float64 {
+	clean := make([]beeminder.Datapoint, 0, len(datapoints))
 	for _, datapoint := range datapoints {
 		if datapoint.IsDummy {
 			continue
