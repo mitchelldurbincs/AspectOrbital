@@ -23,9 +23,11 @@ const summaryRunTimeout = 30 * time.Second
 func main() {
 	logger := applog.New("finance-spoke")
 
-	if err := godotenv.Load(); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			logger.Printf("unable to load .env file: %v", err)
+	for _, envFile := range []string{"cmd/finance-spoke/.env", ".env"} {
+		if err := godotenv.Load(envFile); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				logger.Printf("unable to load %s: %v", envFile, err)
+			}
 		}
 	}
 
