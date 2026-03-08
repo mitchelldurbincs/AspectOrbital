@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"personal-infrastructure/pkg/httpjson"
 	"personal-infrastructure/pkg/hubnotify"
+	"personal-infrastructure/pkg/lifecycle"
 	applog "personal-infrastructure/pkg/logger"
 )
 
@@ -23,7 +25,12 @@ const summaryRunTimeout = 30 * time.Second
 
 func main() {
 	logger := applog.New("finance-spoke")
+	if err := run(logger); err != nil {
+		logger.Printf("finance-spoke exiting: %v", err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	for _, envFile := range []string{"cmd/finance-spoke/.env", ".env"} {
 		if err := godotenv.Load(envFile); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
@@ -34,12 +41,12 @@ func main() {
 
 	cfg, err := loadConfig()
 	if err != nil {
-		logger.Fatalf("invalid configuration: %v", err)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	location, err := time.LoadLocation(cfg.SummaryTimezone)
 	if err != nil {
-		logger.Fatalf("invalid summary timezone %q: %v", cfg.SummaryTimezone, err)
+		return fmt.Errorf("invalid summary timezone %q: %w", cfg.SummaryTimezone, err)
 	}
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
@@ -47,7 +54,7 @@ func main() {
 	plaid := newPlaidClient(cfg, httpClient)
 	stateStore, err := newStateStore(cfg.StateFilePath)
 	if err != nil {
-		logger.Fatalf("failed to initialize state store: %v", err)
+		return fmt.Errorf("failed to initialize state store: %w", err)
 	}
 
 	summaryScheduler := newScheduler(cfg, logger, hub, plaid, stateStore, location)
@@ -97,26 +104,15 @@ func main() {
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
 
 	logger.Printf("finance-spoke running (next summary at %s)", app.scheduler.nextScheduleAfter(time.Now()).In(location).Format(time.RFC3339))
 
-	running := true
-	for running {
-		select {
-		case <-ticker.C:
-			if err := app.runDueNow(); err != nil {
-				logger.Printf("summary check failed: %v", err)
-			}
-		case sig := <-signalCh:
-			logger.Printf("received signal: %s", sig)
-			running = false
-		case err := <-httpErrCh:
-			if err != nil {
-				logger.Fatalf("finance control API failed: %v", err)
-			}
-			running = false
+	exitErr := lifecycle.WaitForExit(signalCh, httpErrCh, ticker.C, func() {
+		if err := app.runDueNow(); err != nil {
+			logger.Printf("summary check failed: %v", err)
 		}
-	}
+	})
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -126,6 +122,7 @@ func main() {
 	}
 
 	logger.Println("finance-spoke stopped")
+	return exitErr
 }
 
 type financeApp struct {

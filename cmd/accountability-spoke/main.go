@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"personal-infrastructure/pkg/accountability"
 	"personal-infrastructure/pkg/beeminder"
+	"personal-infrastructure/pkg/lifecycle"
 )
 
 const (
@@ -21,11 +23,17 @@ const (
 )
 
 func main() {
-	cfg := loadConfig()
 	logger := log.New(os.Stdout, "accountability-spoke ", log.LstdFlags|log.Lmicroseconds)
+	if err := run(logger); err != nil {
+		logger.Printf("accountability-spoke exiting: %v", err)
+	}
+}
+
+func run(logger *log.Logger) error {
+	cfg := loadConfig()
 
 	if err := accountability.Bootstrap(context.Background(), cfg.DBPath); err != nil {
-		logger.Fatalf("bootstrap db: %v", err)
+		return fmt.Errorf("bootstrap db: %w", err)
 	}
 
 	var bee *beeminder.Client
@@ -64,17 +72,18 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			logger.Fatalf("server failed: %v", err)
-		}
-	case <-sigCh:
-	}
+	defer signal.Stop(sigCh)
+
+	exitErr := lifecycle.WaitForExit(sigCh, errCh, nil, func() {})
+
 	loopCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Printf("control API shutdown error: %v", err)
+	}
+	logger.Println("accountability-spoke stopped")
+	return exitErr
 }
 
 type config struct {
