@@ -1,0 +1,257 @@
+use std::{env, path::PathBuf, str::FromStr, time::Duration};
+
+use anyhow::{anyhow, bail, Context, Result};
+use rust_decimal::Decimal;
+
+const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:8092";
+const DEFAULT_NOTIFY_URL: &str = "http://127.0.0.1:8080/notify";
+const DEFAULT_NOTIFY_CHANNEL: &str = "kalshi-alerts";
+const DEFAULT_NOTIFY_SEVERITY: &str = "info";
+const DEFAULT_STATE_FILE: &str = "var/kalshi-spoke/state.json";
+const DEFAULT_API_BASE_URL: &str = "https://api.elections.kalshi.com/trade-api/v2";
+const DEFAULT_WS_URL: &str = "wss://api.elections.kalshi.com/trade-api/ws/v2";
+const DEFAULT_TRIGGER_YES_BID: &str = "0.6000";
+const DEFAULT_HTTP_TIMEOUT: &str = "15s";
+const DEFAULT_WS_RECONNECT_DELAY: &str = "3s";
+
+#[derive(Clone)]
+pub struct Config {
+    pub enabled: bool,
+    pub http_addr: String,
+    pub hub_notify_url: String,
+    pub notify_channel: String,
+    pub notify_severity: String,
+    pub state_file: PathBuf,
+    pub kalshi_api_base_url: String,
+    pub kalshi_ws_url: String,
+    pub kalshi_access_key: String,
+    pub kalshi_private_key_path: PathBuf,
+    pub market_tickers: Vec<String>,
+    pub trigger_yes_bid_dollars: Decimal,
+    pub auto_sell_enabled: bool,
+    pub dry_run: bool,
+    pub subaccount: u32,
+    pub http_timeout: Duration,
+    pub ws_reconnect_delay: Duration,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PublicConfig {
+    pub enabled: bool,
+    pub http_addr: String,
+    pub hub_notify_url: String,
+    pub notify_channel: String,
+    pub notify_severity: String,
+    pub state_file: String,
+    pub kalshi_api_base_url: String,
+    pub kalshi_ws_url: String,
+    pub market_tickers: Vec<String>,
+    pub trigger_yes_bid_dollars: String,
+    pub auto_sell_enabled: bool,
+    pub dry_run: bool,
+    pub subaccount: u32,
+    pub http_timeout_secs: u64,
+    pub ws_reconnect_delay_secs: u64,
+}
+
+impl Config {
+    pub fn load() -> Result<Self> {
+        let enabled = bool_env("KALSHI_SPOKE_ENABLED", false)?;
+        let http_addr = string_env("KALSHI_SPOKE_HTTP_ADDR", DEFAULT_HTTP_ADDR);
+        let hub_notify_url = string_env("KALSHI_HUB_NOTIFY_URL", DEFAULT_NOTIFY_URL);
+        let notify_channel = string_env("KALSHI_NOTIFY_CHANNEL", DEFAULT_NOTIFY_CHANNEL);
+        let notify_severity = normalize_severity(&string_env(
+            "KALSHI_NOTIFY_SEVERITY",
+            DEFAULT_NOTIFY_SEVERITY,
+        ))?;
+        let state_file = PathBuf::from(string_env("KALSHI_STATE_FILE", DEFAULT_STATE_FILE));
+
+        let kalshi_api_base_url =
+            trim_trailing_slash(&string_env("KALSHI_API_BASE_URL", DEFAULT_API_BASE_URL));
+        let kalshi_ws_url = string_env("KALSHI_WS_URL", DEFAULT_WS_URL);
+        let kalshi_access_key = string_env("KALSHI_ACCESS_KEY", "");
+        let kalshi_private_key_path = PathBuf::from(string_env("KALSHI_PRIVATE_KEY_PATH", ""));
+        let market_tickers = parse_csv_env("KALSHI_MARKET_TICKERS");
+
+        let trigger_yes_bid_dollars =
+            decimal_env("KALSHI_TRIGGER_YES_BID_DOLLARS", DEFAULT_TRIGGER_YES_BID)?;
+        let auto_sell_enabled = bool_env("KALSHI_AUTO_SELL_ENABLED", false)?;
+        let dry_run = bool_env("KALSHI_DRY_RUN", true)?;
+        let subaccount = u32_env("KALSHI_SUBACCOUNT", 0)?;
+        let http_timeout = duration_env("KALSHI_HTTP_TIMEOUT", DEFAULT_HTTP_TIMEOUT)?;
+        let ws_reconnect_delay =
+            duration_env("KALSHI_WS_RECONNECT_DELAY", DEFAULT_WS_RECONNECT_DELAY)?;
+
+        if trigger_yes_bid_dollars <= Decimal::ZERO || trigger_yes_bid_dollars >= Decimal::ONE {
+            bail!("KALSHI_TRIGGER_YES_BID_DOLLARS must be between 0 and 1 (example: 0.6000)");
+        }
+
+        if enabled {
+            if kalshi_access_key.is_empty() {
+                bail!("KALSHI_ACCESS_KEY is required when KALSHI_SPOKE_ENABLED=true");
+            }
+            if kalshi_private_key_path.as_os_str().is_empty() {
+                bail!("KALSHI_PRIVATE_KEY_PATH is required when KALSHI_SPOKE_ENABLED=true");
+            }
+            if market_tickers.is_empty() {
+                bail!("KALSHI_MARKET_TICKERS is required when KALSHI_SPOKE_ENABLED=true");
+            }
+        }
+
+        if subaccount > 32 {
+            bail!("KALSHI_SUBACCOUNT must be between 0 and 32");
+        }
+        if ws_reconnect_delay.is_zero() {
+            bail!("KALSHI_WS_RECONNECT_DELAY must be positive");
+        }
+        if http_timeout.is_zero() {
+            bail!("KALSHI_HTTP_TIMEOUT must be positive");
+        }
+
+        Ok(Self {
+            enabled,
+            http_addr,
+            hub_notify_url,
+            notify_channel,
+            notify_severity,
+            state_file,
+            kalshi_api_base_url,
+            kalshi_ws_url,
+            kalshi_access_key,
+            kalshi_private_key_path,
+            market_tickers,
+            trigger_yes_bid_dollars,
+            auto_sell_enabled,
+            dry_run,
+            subaccount,
+            http_timeout,
+            ws_reconnect_delay,
+        })
+    }
+
+    pub fn trigger_threshold_string(&self) -> String {
+        format!("{:.4}", self.trigger_yes_bid_dollars)
+    }
+
+    pub fn public(&self) -> PublicConfig {
+        PublicConfig {
+            enabled: self.enabled,
+            http_addr: self.http_addr.clone(),
+            hub_notify_url: self.hub_notify_url.clone(),
+            notify_channel: self.notify_channel.clone(),
+            notify_severity: self.notify_severity.clone(),
+            state_file: self.state_file.to_string_lossy().to_string(),
+            kalshi_api_base_url: self.kalshi_api_base_url.clone(),
+            kalshi_ws_url: self.kalshi_ws_url.clone(),
+            market_tickers: self.market_tickers.clone(),
+            trigger_yes_bid_dollars: self.trigger_threshold_string(),
+            auto_sell_enabled: self.auto_sell_enabled,
+            dry_run: self.dry_run,
+            subaccount: self.subaccount,
+            http_timeout_secs: self.http_timeout.as_secs(),
+            ws_reconnect_delay_secs: self.ws_reconnect_delay.as_secs(),
+        }
+    }
+}
+
+fn string_env(key: &str, fallback: &str) -> String {
+    match env::var(key) {
+        Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn parse_csv_env(key: &str) -> Vec<String> {
+    match env::var(key) {
+        Ok(raw) => raw
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn bool_env(key: &str, fallback: bool) -> Result<bool> {
+    let raw = match env::var(key) {
+        Ok(value) => value,
+        Err(_) => return Ok(fallback),
+    };
+
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        "" => Ok(fallback),
+        _ => Err(anyhow!("invalid {} value {:?}; use true/false", key, raw)),
+    }
+}
+
+fn u32_env(key: &str, fallback: u32) -> Result<u32> {
+    let raw = match env::var(key) {
+        Ok(value) => value,
+        Err(_) => return Ok(fallback),
+    };
+
+    if raw.trim().is_empty() {
+        return Ok(fallback);
+    }
+
+    raw.trim()
+        .parse::<u32>()
+        .with_context(|| format!("invalid {} value {:?}", key, raw))
+}
+
+fn duration_env(key: &str, fallback: &str) -> Result<Duration> {
+    let raw = match env::var(key) {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => fallback.to_string(),
+    };
+
+    parse_duration(raw.trim()).with_context(|| format!("invalid {} value {:?}", key, raw))
+}
+
+fn parse_duration(raw: &str) -> Result<Duration> {
+    if let Some(value) = raw.strip_suffix("ms") {
+        let ms = u64::from_str(value.trim())?;
+        return Ok(Duration::from_millis(ms));
+    }
+    if let Some(value) = raw.strip_suffix('s') {
+        let secs = u64::from_str(value.trim())?;
+        return Ok(Duration::from_secs(secs));
+    }
+    if let Some(value) = raw.strip_suffix('m') {
+        let mins = u64::from_str(value.trim())?;
+        return Ok(Duration::from_secs(mins * 60));
+    }
+    if let Some(value) = raw.strip_suffix('h') {
+        let hours = u64::from_str(value.trim())?;
+        return Ok(Duration::from_secs(hours * 60 * 60));
+    }
+
+    let secs = u64::from_str(raw.trim())?;
+    Ok(Duration::from_secs(secs))
+}
+
+fn decimal_env(key: &str, fallback: &str) -> Result<Decimal> {
+    let raw = match env::var(key) {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => fallback.to_string(),
+    };
+
+    Decimal::from_str(raw.trim()).with_context(|| format!("invalid {} value {:?}", key, raw))
+}
+
+fn normalize_severity(raw: &str) -> Result<String> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "info" | "warning" | "critical" => Ok(normalized),
+        _ => Err(anyhow!(
+            "KALSHI_NOTIFY_SEVERITY must be one of: info, warning, critical"
+        )),
+    }
+}
+
+fn trim_trailing_slash(value: &str) -> String {
+    value.trim_end_matches('/').to_string()
+}
