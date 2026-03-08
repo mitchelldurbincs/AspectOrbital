@@ -30,7 +30,11 @@ func main() {
 
 	var bee *beeminder.Client
 	if cfg.BeeminderAuthToken != "" && cfg.BeeminderUsername != "" {
-		bee = beeminder.NewClient(cfg.BeeminderBaseURL, cfg.BeeminderAuthToken, cfg.BeeminderUsername, &http.Client{Timeout: 10 * time.Second})
+		bee = beeminder.NewClient(
+			beeminder.WithBaseURL(cfg.BeeminderBaseURL),
+			beeminder.WithAuthToken(cfg.BeeminderAuthToken),
+			beeminder.WithUsername(cfg.BeeminderUsername),
+		)
 	}
 	service := accountability.NewService(cfg.DBPath, bee, cfg.ExpiryPollInterval)
 
