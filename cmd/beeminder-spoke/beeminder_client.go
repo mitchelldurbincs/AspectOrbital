@@ -90,6 +90,10 @@ func (c *beeminderClient) GetDatapointsForDay(ctx context.Context, daystamp stri
 	datapoints := make([]beeminderDatapoint, 0, c.datapointsPerPage)
 
 	path := "/users/" + url.PathEscape(c.username) + "/goals/" + url.PathEscape(c.goalSlug) + "/datapoints.json"
+	orderKnown := false
+	descendingByTimestamp := true
+	hasPrevPageLast := false
+	var prevPageLastTimestamp int64
 
 	for page := 1; page <= c.maxDatapointPages; page++ {
 		query := url.Values{}
@@ -106,13 +110,33 @@ func (c *beeminderClient) GetDatapointsForDay(ctx context.Context, daystamp stri
 			return datapoints, nil
 		}
 
+		if !orderKnown {
+			switch {
+			case len(pageData) > 1:
+				descendingByTimestamp = pageData[0].Timestamp >= pageData[len(pageData)-1].Timestamp
+				orderKnown = true
+			case hasPrevPageLast:
+				descendingByTimestamp = prevPageLastTimestamp >= pageData[0].Timestamp
+				orderKnown = true
+			}
+		}
+
+		prevPageLastTimestamp = pageData[len(pageData)-1].Timestamp
+		hasPrevPageLast = true
+
 		stop := false
 		for _, datapoint := range pageData {
 			switch {
 			case datapoint.Daystamp == daystamp:
 				datapoints = append(datapoints, datapoint)
-			case datapoint.Daystamp < daystamp:
+			case orderKnown && descendingByTimestamp && datapoint.Daystamp < daystamp:
 				stop = true
+			case orderKnown && !descendingByTimestamp && datapoint.Daystamp > daystamp:
+				stop = true
+			}
+
+			if stop {
+				break
 			}
 		}
 
