@@ -86,13 +86,14 @@ func TestNormalizeSpokeCommandSpecsFiltersDedupesAndSkipsPing(t *testing.T) {
 
 func TestNormalizeSpokeOptionType(t *testing.T) {
 	tests := map[string]string{
-		"":          "string",
-		"string":    "string",
-		"int":       "integer",
-		"integer":   "integer",
-		"float64":   "number",
-		"bool":      "boolean",
-		"weirdtype": "string",
+		"":           "string",
+		"string":     "string",
+		"int":        "integer",
+		"integer":    "integer",
+		"float64":    "number",
+		"bool":       "boolean",
+		"attachment": "attachment",
+		"weirdtype":  "string",
 	}
 
 	for input, want := range tests {
@@ -112,6 +113,9 @@ func TestDiscordOptionTypeMappings(t *testing.T) {
 	if got := discordOptionType("boolean"); got != discordgo.ApplicationCommandOptionBoolean {
 		t.Fatalf("expected boolean mapping, got %v", got)
 	}
+	if got := discordOptionType("attachment"); got != discordgo.ApplicationCommandOptionAttachment {
+		t.Fatalf("expected attachment mapping, got %v", got)
+	}
 	if got := discordOptionType("anything-else"); got != discordgo.ApplicationCommandOptionString {
 		t.Fatalf("expected fallback string mapping, got %v", got)
 	}
@@ -126,6 +130,7 @@ func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
 		"bad key":    "ignored",
 		"":           "ignored",
 		"list":       []int{1, 2},
+		"proof":      map[string]any{"id": "a1"},
 	}
 
 	got := pruneCommandOptions(input)
@@ -141,6 +146,9 @@ func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
 	}
 	if got["number"] != json.Number("3.5") {
 		t.Fatalf("expected json.Number option 3.5, got %#v", got["number"])
+	}
+	if got["proof"].(map[string]any)["id"] != "a1" {
+		t.Fatalf("expected proof metadata map to pass through, got %#v", got["proof"])
 	}
 	if got["list"] != "[1 2]" {
 		t.Fatalf("expected fmt string conversion for list, got %#v", got["list"])

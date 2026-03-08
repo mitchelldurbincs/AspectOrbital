@@ -10,6 +10,8 @@ func discordOptionType(optionType string) discordgo.ApplicationCommandOptionType
 		return discordgo.ApplicationCommandOptionNumber
 	case "boolean":
 		return discordgo.ApplicationCommandOptionBoolean
+	case "attachment":
+		return discordgo.ApplicationCommandOptionAttachment
 	default:
 		return discordgo.ApplicationCommandOptionString
 	}
