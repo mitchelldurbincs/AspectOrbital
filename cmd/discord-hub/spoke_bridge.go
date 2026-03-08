@@ -16,7 +16,7 @@ const (
 	defaultSpokeCommandsURL       = "http://127.0.0.1:8090/control/commands"
 	defaultSpokeCommandURL        = "http://127.0.0.1:8090/control/command"
 	legacySpokeArgumentOption     = "argument"
-	legacySpokeCommandDescription = "Command owned by beeminder-spoke"
+	legacySpokeCommandDescription = "Command owned by configured spoke service"
 	spokeCommandHTTPTimeout       = spokebridge.CommandHTTPTimeout
 	discordResponseCharacterLimit = 1900
 )
@@ -65,7 +65,7 @@ func (b *spokeCommandBridge) delegate() *spokebridge.Bridge {
 		return b.inner
 	}
 
-	return spokebridge.NewBridge(b.log, b.httpClient, b.commandsURL, b.commandURL, b.commands)
+	return spokebridge.NewBridgeWithServices(b.log, b.httpClient, []spokebridge.ServiceDefinition{{Name: "default", CommandsURL: b.commandsURL, ExecuteURL: b.commandURL}}, b.commands, nil)
 }
 
 func (b *spokeCommandBridge) fetchCommandsWithRetry() ([]spokeCommandSpec, error) {

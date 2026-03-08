@@ -16,6 +16,20 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, options
 		return "", errors.New("spoke command bridge is disabled")
 	}
 
+	name := strings.ToLower(strings.TrimSpace(commandName))
+	serviceName, ok := b.commandOwners[name]
+	if !ok {
+		if len(b.serviceOrder) == 1 {
+			serviceName = b.serviceOrder[0]
+		} else {
+			return "", fmt.Errorf("unknown command %q", commandName)
+		}
+	}
+	service, ok := b.services[serviceName]
+	if !ok {
+		return "", fmt.Errorf("owning service %q not configured for command %q", serviceName, commandName)
+	}
+
 	request := commandRequest{Command: commandName}
 	if len(options) > 0 {
 		request.Options = pruneCommandOptions(options)
@@ -30,7 +44,7 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, options
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.commandURL, bytes.NewReader(requestBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, service.ExecuteURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return "", err
 	}
