@@ -1,4 +1,4 @@
-package main
+package hubnotify
 
 import (
 	"bytes"
@@ -10,25 +10,25 @@ import (
 	"strings"
 )
 
-type hubClient struct {
+type Client struct {
 	notifyURL  string
 	httpClient *http.Client
 }
 
-type hubNotifyRequest struct {
+type NotifyRequest struct {
 	TargetChannel string `json:"targetChannel"`
 	Message       string `json:"message"`
 	Severity      string `json:"severity"`
 }
 
-func newHubClient(cfg config, httpClient *http.Client) *hubClient {
-	return &hubClient{
-		notifyURL:  cfg.HubNotifyURL,
+func NewClient(notifyURL string, httpClient *http.Client) *Client {
+	return &Client{
+		notifyURL:  notifyURL,
 		httpClient: httpClient,
 	}
 }
 
-func (c *hubClient) Notify(ctx context.Context, payload hubNotifyRequest) error {
+func (c *Client) Notify(ctx context.Context, payload NotifyRequest) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -47,8 +47,8 @@ func (c *hubClient) Notify(ctx context.Context, payload hubNotifyRequest) error 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
-		return fmt.Errorf("discord-hub notify failed (%s): %s", resp.Status, strings.TrimSpace(string(respBody)))
+		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		return fmt.Errorf("discord-hub notify failed (%s): %s", resp.Status, strings.TrimSpace(string(responseBody)))
 	}
 
 	return nil

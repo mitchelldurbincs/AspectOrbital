@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 const failedRunRetryInterval = 6 * time.Hour
@@ -12,13 +14,13 @@ const failedRunRetryInterval = 6 * time.Hour
 type scheduler struct {
 	cfg      config
 	log      *log.Logger
-	hub      *hubClient
+	hub      *hubnotify.Client
 	plaid    *plaidClient
 	state    *stateStore
 	location *time.Location
 }
 
-func newScheduler(cfg config, logger *log.Logger, hub *hubClient, plaid *plaidClient, state *stateStore, location *time.Location) *scheduler {
+func newScheduler(cfg config, logger *log.Logger, hub *hubnotify.Client, plaid *plaidClient, state *stateStore, location *time.Location) *scheduler {
 	return &scheduler{
 		cfg:      cfg,
 		log:      logger,
@@ -103,7 +105,7 @@ func (s *scheduler) sendSummary(ctx context.Context, scheduledAt time.Time, week
 	}
 
 	message := renderWeeklySummaryMessage(s.cfg.SummaryTitle, summary, s.location, s.cfg.SummaryMaxItems)
-	err = s.hub.Notify(ctx, hubNotifyRequest{
+	err = s.hub.Notify(ctx, hubnotify.NotifyRequest{
 		TargetChannel: s.cfg.NotifyTargetChannel,
 		Message:       message,
 		Severity:      s.cfg.NotifySeverity,
