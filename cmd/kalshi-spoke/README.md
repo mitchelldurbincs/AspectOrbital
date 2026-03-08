@@ -2,6 +2,16 @@
 
 `kalshi-spoke` watches Kalshi ticker updates, tracks threshold crossings, and can optionally place a reduce-only sell order when a rule fires.
 
+## Canonical local port map
+
+| Service | Default bind |
+|---|---|
+| `discord-hub` | `127.0.0.1:8080` |
+| `beeminder-spoke` | `127.0.0.1:8090` |
+| `finance-spoke` | `127.0.0.1:8091` |
+| `kalshi-spoke` | `127.0.0.1:8092` |
+| `accountability-spoke` | `127.0.0.1:8093` |
+
 It also sends alerts through `discord-hub` using `POST /notify`.
 
 ## Rule in this V1

@@ -2,6 +2,16 @@
 
 `beeminder-spoke` polls Beeminder and sends reminders to `discord-hub` when you are behind your daily goal.
 
+## Canonical local port map
+
+| Service | Default bind |
+|---|---|
+| `discord-hub` | `127.0.0.1:8080` |
+| `beeminder-spoke` | `127.0.0.1:8090` |
+| `finance-spoke` | `127.0.0.1:8091` |
+| `kalshi-spoke` | `127.0.0.1:8092` |
+| `accountability-spoke` | `127.0.0.1:8093` |
+
 ## What it does
 
 - Polls Beeminder every minute (configurable).

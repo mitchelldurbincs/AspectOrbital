@@ -2,6 +2,16 @@
 
 `discord-hub` keeps a Discord gateway connection alive and exposes a local REST endpoint for internal services to post alerts.
 
+## Canonical local port map
+
+| Service | Default bind |
+|---|---|
+| `discord-hub` | `127.0.0.1:8080` |
+| `beeminder-spoke` | `127.0.0.1:8090` |
+| `finance-spoke` | `127.0.0.1:8091` |
+| `kalshi-spoke` | `127.0.0.1:8092` |
+| `accountability-spoke` | `127.0.0.1:8093` |
+
 ## Local run
 
 1. Copy `cmd/discord-hub/.env.example` to `cmd/discord-hub/.env` and fill values.
