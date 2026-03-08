@@ -38,9 +38,13 @@ Other common vars:
 
 ## Local run
 
+Copy `cmd/kalshi-spoke/.env.example` to `cmd/kalshi-spoke/.env` and fill values.
+
 ```bash
 cargo run --manifest-path cmd/kalshi-spoke/Cargo.toml
 ```
+
+`kalshi-spoke` loads env files in this order: `cmd/kalshi-spoke/.env`, then `.env` (legacy fallback).
 
 ## Local API
 

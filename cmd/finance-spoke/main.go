@@ -332,7 +332,7 @@ const plaidSetupPage = `<!doctype html>
 </head>
 <body>
   <h1>Plaid setup helper</h1>
-  <p>Use this page to connect Fifth Third and American Express, then copy returned access tokens into <code>PLAID_ACCESS_TOKENS</code> in your <code>.env</code>.</p>
+  <p>Use this page to connect Fifth Third and American Express, then copy returned access tokens into <code>PLAID_ACCESS_TOKENS</code> in your <code>cmd/finance-spoke/.env</code>.</p>
   <button id="launch">Connect account</button>
   <pre id="output">Ready.</pre>
 
@@ -373,7 +373,7 @@ const plaidSetupPage = `<!doctype html>
             setOutput([
               'Connected institution: ' + (metadata.institution ? metadata.institution.name : 'unknown'),
               'Item ID: ' + exchangeData.itemId,
-              'Access Token (copy into PLAID_ACCESS_TOKENS):',
+              'Access Token (copy into cmd/finance-spoke/.env as PLAID_ACCESS_TOKENS):',
               exchangeData.accessToken,
             ].join('\n'))
           },

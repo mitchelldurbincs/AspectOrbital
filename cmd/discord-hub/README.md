@@ -4,7 +4,7 @@
 
 ## Local run
 
-1. Fill in values in `.env`.
+1. Copy `cmd/discord-hub/.env.example` to `cmd/discord-hub/.env` and fill values.
 2. Start the hub:
 
 ```bash
@@ -12,6 +12,8 @@ go run ./cmd/discord-hub
 ```
 
 3. In Discord, run `/ping` to verify the bot is responsive.
+
+`discord-hub` loads env files in this order: `cmd/discord-hub/.env`, then `.env` (legacy fallback).
 
 ## Beeminder-spoke command discovery
 

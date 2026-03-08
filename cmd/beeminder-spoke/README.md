@@ -17,7 +17,9 @@
 - `DISCORD_HUB_NOTIFY_URL`
 - `BEEMINDER_NOTIFY_CHANNEL`
 
-Copy from `.env.example` and fill values.
+Copy `cmd/beeminder-spoke/.env.example` to `cmd/beeminder-spoke/.env` and fill values.
+
+`beeminder-spoke` loads env files in this order: `cmd/beeminder-spoke/.env`, then `.env` (legacy fallback).
 
 ## Run locally
 

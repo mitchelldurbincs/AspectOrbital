@@ -24,9 +24,13 @@
 
 ## Local run
 
+Copy `cmd/finance-spoke/.env.example` to `cmd/finance-spoke/.env` and fill values.
+
 ```bash
 go run ./cmd/finance-spoke
 ```
+
+`finance-spoke` loads env files in this order: `cmd/finance-spoke/.env`, then `.env` (legacy fallback).
 
 ## Local API
 
@@ -57,4 +61,4 @@ Quick setup flow for real accounts:
 2. Open `http://127.0.0.1:8091/plaid/setup`.
 3. Connect Fifth Third, copy returned `accessToken`.
 4. Repeat and connect American Express, copy second token.
-5. Set `PLAID_ACCESS_TOKENS=token1,token2` in `.env` and enable `FINANCE_SUMMARY_ENABLED=true`.
+5. Set `PLAID_ACCESS_TOKENS=token1,token2` in `cmd/finance-spoke/.env` and enable `FINANCE_SUMMARY_ENABLED=true`.
