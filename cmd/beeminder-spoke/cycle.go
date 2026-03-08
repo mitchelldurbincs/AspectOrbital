@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"time"
+
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 func (a *spokeApp) runCycle(parentCtx context.Context) error {
@@ -50,7 +52,7 @@ func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	}
 
 	message := renderReminderMessage(snapshot)
-	if err := a.hub.Notify(ctx, hubNotifyRequest{
+	if err := a.hub.Notify(ctx, hubnotify.NotifyRequest{
 		TargetChannel: a.cfg.NotifyTargetChannel,
 		Message:       message,
 		Severity:      a.cfg.NotifySeverity,

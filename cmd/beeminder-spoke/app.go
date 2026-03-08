@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/beeminder"
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 type spokeApp struct {
 	cfg       config
 	log       *log.Logger
 	beeminder *beeminder.Client
-	hub       *hubClient
+	hub       *hubnotify.Client
 	engine    *reminderEngine
 	location  *time.Location
 }
