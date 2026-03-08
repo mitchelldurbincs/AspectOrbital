@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/configutil"
 )
 
 const (
@@ -86,70 +87,70 @@ func (c controlCommands) All() []string {
 func loadConfig() (config, error) {
 	var cfg config
 
-	cfg.HTTPAddr = stringEnv("BEEMINDER_SPOKE_HTTP_ADDR", defaultHTTPAddr)
+	cfg.HTTPAddr = configutil.StringEnv("BEEMINDER_SPOKE_HTTP_ADDR", defaultHTTPAddr)
 
-	cfg.BeeminderBaseURL = strings.TrimRight(stringEnv("BEEMINDER_API_BASE_URL", defaultBeeminderBaseURL), "/")
+	cfg.BeeminderBaseURL = strings.TrimRight(configutil.StringEnv("BEEMINDER_API_BASE_URL", defaultBeeminderBaseURL), "/")
 	cfg.BeeminderAuthToken = strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN"))
 	cfg.BeeminderUsername = strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME"))
 	cfg.BeeminderGoalSlug = strings.TrimSpace(os.Getenv("BEEMINDER_GOAL_SLUG"))
 
-	cfg.HubNotifyURL = strings.TrimSpace(stringEnv("DISCORD_HUB_NOTIFY_URL", defaultHubNotifyURL))
-	cfg.NotifyTargetChannel = strings.TrimSpace(stringEnv("BEEMINDER_NOTIFY_CHANNEL", defaultTargetChannel))
-	cfg.NotifySeverity = normalizeSeverity(stringEnv("BEEMINDER_NOTIFY_SEVERITY", defaultNotifySeverity))
+	cfg.HubNotifyURL = strings.TrimSpace(configutil.StringEnv("DISCORD_HUB_NOTIFY_URL", defaultHubNotifyURL))
+	cfg.NotifyTargetChannel = strings.TrimSpace(configutil.StringEnv("BEEMINDER_NOTIFY_CHANNEL", defaultTargetChannel))
+	cfg.NotifySeverity = configutil.NormalizeSeverity(configutil.StringEnv("BEEMINDER_NOTIFY_SEVERITY", defaultNotifySeverity))
 
 	var err error
 
-	cfg.PollInterval, err = durationEnv("BEEMINDER_POLL_INTERVAL", defaultPollInterval)
+	cfg.PollInterval, err = configutil.DurationEnv("BEEMINDER_POLL_INTERVAL", defaultPollInterval)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.ReminderInterval, err = durationEnv("BEEMINDER_REMINDER_INTERVAL", defaultReminderInterval)
+	cfg.ReminderInterval, err = configutil.DurationEnv("BEEMINDER_REMINDER_INTERVAL", defaultReminderInterval)
 	if err != nil {
 		return config{}, err
 	}
 
-	reminderStart := stringEnv("BEEMINDER_REMINDER_START", defaultReminderStart)
-	cfg.ReminderStartHour, cfg.ReminderStartMinute, err = parseClock(reminderStart)
+	reminderStart := configutil.StringEnv("BEEMINDER_REMINDER_START", defaultReminderStart)
+	cfg.ReminderStartHour, cfg.ReminderStartMinute, err = configutil.ParseClockHHMM(reminderStart)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_START: %w", err)
 	}
 
-	cfg.ActiveGrace, err = durationEnv("BEEMINDER_ACTIVE_GRACE", defaultActiveGrace)
+	cfg.ActiveGrace, err = configutil.DurationEnv("BEEMINDER_ACTIVE_GRACE", defaultActiveGrace)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.StartedSnooze, err = durationEnv("BEEMINDER_STARTED_SNOOZE", defaultStartedSnooze)
+	cfg.StartedSnooze, err = configutil.DurationEnv("BEEMINDER_STARTED_SNOOZE", defaultStartedSnooze)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.DefaultSnooze, err = durationEnv("BEEMINDER_DEFAULT_SNOOZE", defaultSnoozeDuration)
+	cfg.DefaultSnooze, err = configutil.DurationEnv("BEEMINDER_DEFAULT_SNOOZE", defaultSnoozeDuration)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.HTTPTimeout, err = durationEnv("BEEMINDER_HTTP_TIMEOUT", defaultHTTPTimeout)
+	cfg.HTTPTimeout, err = configutil.DurationEnv("BEEMINDER_HTTP_TIMEOUT", defaultHTTPTimeout)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.DatapointsPerPage, err = intEnv("BEEMINDER_DATAPOINTS_PER_PAGE", defaultDatapointsPerPage)
+	cfg.DatapointsPerPage, err = configutil.IntEnv("BEEMINDER_DATAPOINTS_PER_PAGE", defaultDatapointsPerPage)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.MaxDatapointPages, err = intEnv("BEEMINDER_MAX_DATAPOINT_PAGES", defaultMaxDatapointPages)
+	cfg.MaxDatapointPages, err = configutil.IntEnv("BEEMINDER_MAX_DATAPOINT_PAGES", defaultMaxDatapointPages)
 	if err != nil {
 		return config{}, err
 	}
 
 	cfg.Commands = controlCommands{
-		Started: normalizeCommand(stringEnv("BEEMINDER_COMMAND_STARTED", "started")),
-		Snooze:  normalizeCommand(stringEnv("BEEMINDER_COMMAND_SNOOZE", "snooze")),
-		Resume:  normalizeCommand(stringEnv("BEEMINDER_COMMAND_RESUME", "resume")),
-		Status:  normalizeCommand(stringEnv("BEEMINDER_COMMAND_STATUS", "status")),
+		Started: normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_STARTED", "started")),
+		Snooze:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_SNOOZE", "snooze")),
+		Resume:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_RESUME", "resume")),
+		Status:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_STATUS", "status")),
 	}
 
 	if err := validateConfig(cfg); err != nil {
@@ -207,9 +208,8 @@ func validateConfig(cfg config) error {
 		return errors.New("BEEMINDER_MAX_DATAPOINT_PAGES must be positive")
 	}
 
-	validSeverities := map[string]struct{}{"info": {}, "warning": {}, "critical": {}}
-	if _, ok := validSeverities[cfg.NotifySeverity]; !ok {
-		return errors.New("BEEMINDER_NOTIFY_SEVERITY must be one of: info, warning, critical")
+	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
+		return fmt.Errorf("BEEMINDER_NOTIFY_SEVERITY %w", err)
 	}
 
 	allCommands := cfg.Commands.All()
@@ -242,54 +242,6 @@ func isValidSlashCommandName(value string) bool {
 	return true
 }
 
-func normalizeSeverity(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
-}
-
 func normalizeCommand(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
-}
-
-func stringEnv(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback, nil
-	}
-
-	value, err := time.ParseDuration(raw)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", key, err)
-	}
-	return value, nil
-}
-
-func intEnv(key string, fallback int) (int, error) {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback, nil
-	}
-
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", key, err)
-	}
-
-	return value, nil
-}
-
-func parseClock(value string) (int, int, error) {
-	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return parsed.Hour(), parsed.Minute(), nil
 }

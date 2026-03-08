@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/configutil"
 )
 
 const (
@@ -63,57 +64,57 @@ type config struct {
 func loadConfig() (config, error) {
 	var cfg config
 
-	cfg.HTTPAddr = stringEnv("FINANCE_SPOKE_HTTP_ADDR", defaultFinanceHTTPAddr)
+	cfg.HTTPAddr = configutil.StringEnv("FINANCE_SPOKE_HTTP_ADDR", defaultFinanceHTTPAddr)
 
-	cfg.HubNotifyURL = stringEnv("FINANCE_HUB_NOTIFY_URL", defaultFinanceHubNotifyURL)
-	cfg.NotifyTargetChannel = stringEnv("FINANCE_NOTIFY_CHANNEL", defaultFinanceChannel)
-	cfg.NotifySeverity = normalizeSeverity(stringEnv("FINANCE_NOTIFY_SEVERITY", defaultFinanceSeverity))
+	cfg.HubNotifyURL = configutil.StringEnv("FINANCE_HUB_NOTIFY_URL", defaultFinanceHubNotifyURL)
+	cfg.NotifyTargetChannel = configutil.StringEnv("FINANCE_NOTIFY_CHANNEL", defaultFinanceChannel)
+	cfg.NotifySeverity = configutil.NormalizeSeverity(configutil.StringEnv("FINANCE_NOTIFY_SEVERITY", defaultFinanceSeverity))
 
-	cfg.SummaryEnabled = boolEnv("FINANCE_SUMMARY_ENABLED", false)
-	cfg.SummaryTitle = stringEnv("FINANCE_SUMMARY_TITLE", defaultFinanceSummaryTitle)
-	cfg.SummaryTimezone = stringEnv("FINANCE_SUMMARY_TIMEZONE", defaultSummaryTimezone)
-	cfg.SummaryLookbackDays = intEnvWithDefault("FINANCE_SUMMARY_LOOKBACK_DAYS", defaultSummaryLookbackDays)
-	cfg.SummarySendEmpty = boolEnv("FINANCE_SUMMARY_SEND_EMPTY", false)
-	cfg.SummaryMaxItems = intEnvWithDefault("FINANCE_SUMMARY_MAX_ITEMS", defaultSummaryMaxItems)
+	cfg.SummaryEnabled = configutil.BoolEnvDefault("FINANCE_SUMMARY_ENABLED", false)
+	cfg.SummaryTitle = configutil.StringEnv("FINANCE_SUMMARY_TITLE", defaultFinanceSummaryTitle)
+	cfg.SummaryTimezone = configutil.StringEnv("FINANCE_SUMMARY_TIMEZONE", defaultSummaryTimezone)
+	cfg.SummaryLookbackDays = configutil.IntEnvDefault("FINANCE_SUMMARY_LOOKBACK_DAYS", defaultSummaryLookbackDays)
+	cfg.SummarySendEmpty = configutil.BoolEnvDefault("FINANCE_SUMMARY_SEND_EMPTY", false)
+	cfg.SummaryMaxItems = configutil.IntEnvDefault("FINANCE_SUMMARY_MAX_ITEMS", defaultSummaryMaxItems)
 
-	weekday, err := parseWeekday(stringEnv("FINANCE_SUMMARY_WEEKDAY", defaultSummaryWeekday))
+	weekday, err := parseWeekday(configutil.StringEnv("FINANCE_SUMMARY_WEEKDAY", defaultSummaryWeekday))
 	if err != nil {
 		return config{}, fmt.Errorf("invalid FINANCE_SUMMARY_WEEKDAY: %w", err)
 	}
 	cfg.SummaryWeekday = weekday
 
-	hour, minute, err := parseClock(stringEnv("FINANCE_SUMMARY_TIME", defaultSummaryTime))
+	hour, minute, err := configutil.ParseClockHHMM(configutil.StringEnv("FINANCE_SUMMARY_TIME", defaultSummaryTime))
 	if err != nil {
 		return config{}, fmt.Errorf("invalid FINANCE_SUMMARY_TIME: %w", err)
 	}
 	cfg.SummaryHour = hour
 	cfg.SummaryMinute = minute
 
-	cfg.SummaryPollInterval, err = durationEnv("FINANCE_SUMMARY_POLL_INTERVAL", defaultSummaryPollInterval)
+	cfg.SummaryPollInterval, err = configutil.DurationEnv("FINANCE_SUMMARY_POLL_INTERVAL", defaultSummaryPollInterval)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.StateFilePath = stringEnv("FINANCE_STATE_FILE", defaultFinanceStateFilePath)
+	cfg.StateFilePath = configutil.StringEnv("FINANCE_STATE_FILE", defaultFinanceStateFilePath)
 	if !filepath.IsAbs(cfg.StateFilePath) {
 		cfg.StateFilePath = filepath.Clean(cfg.StateFilePath)
 	}
 
 	cfg.PlaidClientID = strings.TrimSpace(os.Getenv("PLAID_CLIENT_ID"))
 	cfg.PlaidSecret = strings.TrimSpace(os.Getenv("PLAID_SECRET"))
-	cfg.PlaidEnvironment = strings.ToLower(strings.TrimSpace(stringEnv("PLAID_ENV", defaultPlaidEnv)))
+	cfg.PlaidEnvironment = strings.ToLower(strings.TrimSpace(configutil.StringEnv("PLAID_ENV", defaultPlaidEnv)))
 	cfg.PlaidBaseURL, err = plaidBaseURLForEnvironment(cfg.PlaidEnvironment)
 	if err != nil {
 		return config{}, err
 	}
 
 	cfg.PlaidAccessTokens = parseCSVValues(os.Getenv("PLAID_ACCESS_TOKENS"))
-	cfg.PlaidClientName = stringEnv("PLAID_CLIENT_NAME", "Aspect Orbital Finance")
-	cfg.PlaidCountryCodes = parseCSVValues(stringEnv("PLAID_COUNTRY_CODES", "US"))
-	cfg.PlaidLanguage = stringEnv("PLAID_LANGUAGE", "en")
+	cfg.PlaidClientName = configutil.StringEnv("PLAID_CLIENT_NAME", "Aspect Orbital Finance")
+	cfg.PlaidCountryCodes = parseCSVValues(configutil.StringEnv("PLAID_COUNTRY_CODES", "US"))
+	cfg.PlaidLanguage = configutil.StringEnv("PLAID_LANGUAGE", "en")
 	cfg.PlaidWebhookURL = strings.TrimSpace(os.Getenv("PLAID_WEBHOOK_URL"))
 
-	cfg.HTTPTimeout, err = durationEnv("FINANCE_HTTP_TIMEOUT", defaultSummaryHTTPTimeout)
+	cfg.HTTPTimeout, err = configutil.DurationEnv("FINANCE_HTTP_TIMEOUT", defaultSummaryHTTPTimeout)
 	if err != nil {
 		return config{}, err
 	}
@@ -145,13 +146,8 @@ func validateConfig(cfg config) error {
 		return errors.New("FINANCE_HTTP_TIMEOUT must be positive")
 	}
 
-	allowedSeverities := map[string]struct{}{
-		"info":     {},
-		"warning":  {},
-		"critical": {},
-	}
-	if _, ok := allowedSeverities[cfg.NotifySeverity]; !ok {
-		return errors.New("FINANCE_NOTIFY_SEVERITY must be one of: info, warning, critical")
+	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
+		return fmt.Errorf("FINANCE_NOTIFY_SEVERITY %w", err)
 	}
 
 	if _, err := time.LoadLocation(cfg.SummaryTimezone); err != nil {
@@ -243,68 +239,4 @@ func parseCSVValues(raw string) []string {
 	}
 
 	return values
-}
-
-func parseClock(value string) (int, int, error) {
-	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return parsed.Hour(), parsed.Minute(), nil
-}
-
-func normalizeSeverity(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
-}
-
-func boolEnv(key string, fallback bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-
-	value, err := strconv.ParseBool(raw)
-	if err != nil {
-		return fallback
-	}
-
-	return value
-}
-
-func stringEnv(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-
-	return value
-}
-
-func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback, nil
-	}
-
-	value, err := time.ParseDuration(raw)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", key, err)
-	}
-
-	return value, nil
-}
-
-func intEnvWithDefault(key string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return fallback
-	}
-
-	return value
 }
