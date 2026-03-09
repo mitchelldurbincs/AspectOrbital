@@ -14,7 +14,8 @@ jobs:
           go-version-file: go.mod
       - name: Run Go tests with coverage
         run: |
-          go test ./cmd/beeminder-spoke ./cmd/finance-spoke ./cmd/accountability-spoke -coverprofile=coverage.out -covermode=count
+          go test -count=1 ./cmd/accountability-spoke
+          go test -count=1 ./cmd/beeminder-spoke ./cmd/finance-spoke ./cmd/accountability-spoke -coverprofile=coverage.out -covermode=count
       - name: Enforce minimum per-file coverage (changed logic files)
         run: |
           bash scripts/check_changed_coverage.sh coverage.out
