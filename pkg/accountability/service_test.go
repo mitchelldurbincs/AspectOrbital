@@ -2,29 +2,42 @@ package accountability
 
 import (
 	"context"
+	"database/sql"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func testDBPath(t *testing.T) string {
+func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skip("sqlite3 not found in PATH")
-	}
 	path := filepath.Join(t.TempDir(), "accountability.sqlite")
-	if err := Bootstrap(context.Background(), path); err != nil {
+	db, err := OpenDB(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return path
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	if err := Bootstrap(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func testService(t *testing.T, db *sql.DB, pollInterval, expiryGrace time.Duration) *Service {
+	t.Helper()
+	svc, err := NewService(db, pollInterval, expiryGrace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return svc
 }
 
 func TestRestartRecoveryKeepsPendingCommitments(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc := testService(t, db, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
 
 	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Hour))
@@ -32,7 +45,7 @@ func TestRestartRecoveryKeepsPendingCommitments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restarted := NewService(path, time.Minute, 12*time.Hour)
+	restarted := testService(t, db, time.Minute, 12*time.Hour)
 	got, err := restarted.StatusForUser(context.Background(), "u1")
 	if err != nil {
 		t.Fatal(err)
@@ -43,9 +56,9 @@ func TestRestartRecoveryKeepsPendingCommitments(t *testing.T) {
 }
 
 func TestDeadlineTransitionMarksOverdue(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 0)
+	svc := testService(t, db, time.Minute, 0)
 	svc.now = func() time.Time { return now }
 	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(5*time.Minute))
 	if err != nil {
@@ -67,9 +80,9 @@ func TestDeadlineTransitionMarksOverdue(t *testing.T) {
 }
 
 func TestProofHandlingIsIdempotent(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc := testService(t, db, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
 	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Hour))
 	if err != nil {
@@ -91,9 +104,9 @@ func TestProofHandlingIsIdempotent(t *testing.T) {
 }
 
 func TestSnoozeHidesReminderUntilElapsed(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc := testService(t, db, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
 
 	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(-10*time.Minute))
@@ -134,9 +147,9 @@ func TestSnoozeHidesReminderUntilElapsed(t *testing.T) {
 }
 
 func TestMarkReminderSentThrottlesReminders(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc := testService(t, db, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
 
 	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
@@ -167,9 +180,9 @@ func TestMarkReminderSentThrottlesReminders(t *testing.T) {
 }
 
 func TestExpireOverdueUsesGracePeriod(t *testing.T) {
-	path := testDBPath(t)
+	db := testDB(t)
 	now := time.Now().UTC()
-	svc := NewService(path, time.Minute, 30*time.Minute)
+	svc := testService(t, db, time.Minute, 30*time.Minute)
 	svc.now = func() time.Time { return now }
 
 	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
@@ -197,11 +210,14 @@ func TestExpireOverdueUsesGracePeriod(t *testing.T) {
 }
 
 func TestBootstrapCreatesDBFile(t *testing.T) {
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skip("sqlite3 not found in PATH")
-	}
 	path := filepath.Join(t.TempDir(), "db.sqlite")
-	if err := Bootstrap(context.Background(), path); err != nil {
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := Bootstrap(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); err != nil {

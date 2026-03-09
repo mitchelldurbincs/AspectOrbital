@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -48,11 +49,20 @@ func run(logger *log.Logger) error {
 	}
 	warnOnKnownSpokePortCollisions(logger)
 
-	if err := accountability.Bootstrap(context.Background(), cfg.DBPath); err != nil {
-		logger.Fatalf("bootstrap db: %v", err)
+	db, err := accountability.OpenDB(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer closeDB(logger, db)
+
+	if err := accountability.Bootstrap(context.Background(), db); err != nil {
+		return fmt.Errorf("bootstrap db: %w", err)
 	}
 
-	service := accountability.NewService(cfg.DBPath, cfg.ExpiryPollInterval, cfg.ExpiryGracePeriod)
+	service, err := accountability.NewService(db, cfg.ExpiryPollInterval, cfg.ExpiryGracePeriod)
+	if err != nil {
+		return fmt.Errorf("init accountability service: %w", err)
+	}
 	hub := hubnotify.NewClient(cfg.HubNotifyURL, cfg.HubNotifyAuthToken, &http.Client{Timeout: 10 * time.Second})
 	openAIClient := newOpenAIVisionClient(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel, &http.Client{Timeout: cfg.OpenAITimeout})
 	policies, err := loadPolicyCatalog(cfg.PolicyFile, openAIClient)
@@ -106,6 +116,15 @@ func run(logger *log.Logger) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+func closeDB(logger *log.Logger, db *sql.DB) {
+	if db == nil {
+		return
+	}
+	if err := db.Close(); err != nil {
+		logger.Printf("db close error: %v", err)
+	}
 }
 
 type config struct {
