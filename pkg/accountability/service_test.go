@@ -103,6 +103,33 @@ func TestProofHandlingIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestLateProofMarksCommitmentFailedWithoutExpirySweep(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	result, err := svc.SubmitProof(context.Background(), "u1", ProofSubmission{Text: "done", Verdict: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusFailed {
+		t.Fatalf("expected failed status for late proof, got %s", result.Status)
+	}
+	if result.ProofMetadata == "" {
+		t.Fatal("expected proof metadata to be stored for late proof")
+	}
+	if _, err := svc.StatusForUser(context.Background(), "u1"); err == nil {
+		t.Fatal("expected no active commitment after late proof failure")
+	}
+}
+
 func TestSnoozeHidesReminderUntilElapsed(t *testing.T) {
 	db := testDB(t)
 	now := time.Now().UTC()

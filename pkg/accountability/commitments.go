@@ -126,9 +126,20 @@ func (s *Service) SubmitProof(_ context.Context, userID string, submission Proof
 	submission.Text = strings.TrimSpace(submission.Text)
 	submission.Verdict = strings.TrimSpace(submission.Verdict)
 	meta, _ := json.Marshal(submission)
-	_, err = s.db.ExecContext(context.Background(), `UPDATE commitments SET status='success',proof_metadata=?,snoozed_until='',updated_at=? WHERE id=? AND status='pending';`, string(meta), ts(now), active.ID)
+	status := StatusSuccess
+	if !active.Deadline.After(now) {
+		status = StatusFailed
+	}
+	result, err := s.db.ExecContext(context.Background(), `UPDATE commitments SET status=?,proof_metadata=?,snoozed_until='',updated_at=? WHERE id=? AND status='pending';`, string(status), string(meta), ts(now), active.ID)
 	if err != nil {
 		return Commitment{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Commitment{}, err
+	}
+	if rowsAffected == 0 {
+		return s.GetByID(active.ID)
 	}
 	return s.GetByID(active.ID)
 }
