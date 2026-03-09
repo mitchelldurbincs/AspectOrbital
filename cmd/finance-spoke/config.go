@@ -63,6 +63,7 @@ type config struct {
 
 func loadConfig() (config, error) {
 	var cfg config
+	var err error
 
 	cfg.HTTPAddr = configutil.StringEnv("FINANCE_SPOKE_HTTP_ADDR", defaultFinanceHTTPAddr)
 
@@ -70,12 +71,24 @@ func loadConfig() (config, error) {
 	cfg.NotifyTargetChannel = configutil.StringEnv("FINANCE_NOTIFY_CHANNEL", defaultFinanceChannel)
 	cfg.NotifySeverity = configutil.NormalizeSeverity(configutil.StringEnv("FINANCE_NOTIFY_SEVERITY", defaultFinanceSeverity))
 
-	cfg.SummaryEnabled = configutil.BoolEnvDefault("FINANCE_SUMMARY_ENABLED", false)
+	cfg.SummaryEnabled, err = configutil.BoolEnvWithDefaultStrict("FINANCE_SUMMARY_ENABLED", false)
+	if err != nil {
+		return config{}, err
+	}
 	cfg.SummaryTitle = configutil.StringEnv("FINANCE_SUMMARY_TITLE", defaultFinanceSummaryTitle)
 	cfg.SummaryTimezone = configutil.StringEnv("FINANCE_SUMMARY_TIMEZONE", defaultSummaryTimezone)
-	cfg.SummaryLookbackDays = configutil.IntEnvDefault("FINANCE_SUMMARY_LOOKBACK_DAYS", defaultSummaryLookbackDays)
-	cfg.SummarySendEmpty = configutil.BoolEnvDefault("FINANCE_SUMMARY_SEND_EMPTY", false)
-	cfg.SummaryMaxItems = configutil.IntEnvDefault("FINANCE_SUMMARY_MAX_ITEMS", defaultSummaryMaxItems)
+	cfg.SummaryLookbackDays, err = configutil.IntEnvWithDefaultStrict("FINANCE_SUMMARY_LOOKBACK_DAYS", defaultSummaryLookbackDays)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummarySendEmpty, err = configutil.BoolEnvWithDefaultStrict("FINANCE_SUMMARY_SEND_EMPTY", false)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummaryMaxItems, err = configutil.IntEnvWithDefaultStrict("FINANCE_SUMMARY_MAX_ITEMS", defaultSummaryMaxItems)
+	if err != nil {
+		return config{}, err
+	}
 
 	weekday, err := parseWeekday(configutil.StringEnv("FINANCE_SUMMARY_WEEKDAY", defaultSummaryWeekday))
 	if err != nil {

@@ -52,6 +52,20 @@ func IntEnvDefault(key string, fallback int) int {
 	return value
 }
 
+func IntEnvWithDefaultStrict(key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return value, nil
+}
+
 func IntEnv(key string, fallback int) (int, error) {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -78,6 +92,20 @@ func BoolEnvDefault(key string, fallback bool) bool {
 	}
 
 	return value
+}
+
+func BoolEnvWithDefaultStrict(key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return value, nil
 }
 
 func ParseClockHHMM(value string) (int, int, error) {
