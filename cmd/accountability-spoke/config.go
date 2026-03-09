@@ -77,6 +77,15 @@ func loadConfig() (config, error) {
 	cfg.StatusCommandName = spokecontract.NormalizeCommandName(cfg.StatusCommandNameRaw)
 	cfg.CancelCommandName = spokecontract.NormalizeCommandName(cfg.CancelCommandNameRaw)
 	cfg.SnoozeCommandName = spokecontract.NormalizeCommandName(cfg.SnoozeCommandNameRaw)
+	if err := validateCommandNames(map[string]string{
+		"ACCOUNTABILITY_COMMAND_COMMIT": cfg.CommitCommandName,
+		"ACCOUNTABILITY_COMMAND_PROOF":  cfg.ProofCommandName,
+		"ACCOUNTABILITY_COMMAND_STATUS": cfg.StatusCommandName,
+		"ACCOUNTABILITY_COMMAND_CANCEL": cfg.CancelCommandName,
+		"ACCOUNTABILITY_COMMAND_SNOOZE": cfg.SnoozeCommandName,
+	}); err != nil {
+		return config{}, err
+	}
 
 	if cfg.ExpiryPollInterval <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL must be positive")
@@ -104,4 +113,18 @@ func loadConfig() (config, error) {
 	}
 
 	return cfg, nil
+}
+
+func validateCommandNames(commands map[string]string) error {
+	seen := make(map[string]string, len(commands))
+	for envName, value := range commands {
+		if err := spokecontract.ValidateCommandName(value); err != nil {
+			return errors.New(envName + " is invalid after normalization: " + err.Error())
+		}
+		if prevEnv, ok := seen[value]; ok {
+			return errors.New(prevEnv + " and " + envName + " both normalize to \"" + value + "\"")
+		}
+		seen[value] = envName
+	}
+	return nil
 }

@@ -100,3 +100,46 @@ func TestLoadConfigRejectsDefaultSnoozeAboveMax(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLoadConfigRejectsDuplicateNormalizedCommandNames(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	t.Setenv("ACCOUNTABILITY_COMMAND_COMMIT", "commit")
+	t.Setenv("ACCOUNTABILITY_COMMAND_STATUS", " Commit ")
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error for duplicate normalized command names")
+	}
+	if !strings.Contains(err.Error(), "both normalize to \"commit\"") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigRejectsInvalidNormalizedCommandName(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	t.Setenv("ACCOUNTABILITY_COMMAND_PROOF", "bad name")
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid normalized command name")
+	}
+	if !strings.Contains(err.Error(), "ACCOUNTABILITY_COMMAND_PROOF is invalid after normalization") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigNormalizesValidCommandNames(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	t.Setenv("ACCOUNTABILITY_COMMAND_COMMIT", " Commit ")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("expected config to load, got: %v", err)
+	}
+	if cfg.CommitCommandName != "commit" {
+		t.Fatalf("expected normalized command name 'commit', got %q", cfg.CommitCommandName)
+	}
+}
