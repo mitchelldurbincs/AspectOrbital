@@ -1,24 +1,10 @@
 package main
 
-type commandCatalogResponse struct {
-	Version  int                 `json:"version"`
-	Service  string              `json:"service"`
-	Commands []commandDefinition `json:"commands"`
-	Names    []string            `json:"commandNames"`
-}
+import "personal-infrastructure/pkg/spokecontract"
 
-type commandDefinition struct {
-	Name        string                    `json:"name"`
-	Description string                    `json:"description"`
-	Options     []commandOptionDefinition `json:"options,omitempty"`
-}
-
-type commandOptionDefinition struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
+type commandCatalogResponse = spokecontract.CommandCatalog
+type commandDefinition = spokecontract.CommandSpec
+type commandOptionDefinition = spokecontract.CommandOptionSpec
 
 func commandCatalogForConfig(cfg config) commandCatalogResponse {
 	commands := []commandDefinition{
@@ -49,7 +35,7 @@ func commandCatalogForConfig(cfg config) commandCatalogResponse {
 	}
 
 	return commandCatalogResponse{
-		Version:  commandCatalogVersion,
+		Version:  spokecontract.CatalogVersion,
 		Service:  commandCatalogService,
 		Commands: commands,
 		Names:    cfg.Commands.All(),

@@ -49,39 +49,27 @@ func Discover(logger *log.Logger) *Bridge {
 }
 
 func configuredServices() ([]ServiceDefinition, error) {
-	if raw := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_SERVICES")); raw != "" {
-		var services []ServiceDefinition
-		if err := json.Unmarshal([]byte(raw), &services); err != nil {
-			return nil, fmt.Errorf("invalid SPOKE_COMMAND_SERVICES: %w", err)
-		}
-		if len(services) == 0 {
-			return nil, errors.New("SPOKE_COMMAND_SERVICES cannot be empty")
-		}
-		for i, service := range services {
-			if strings.TrimSpace(service.CommandsURL) == "" {
-				return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].commandsUrl is required", i)
-			}
-			if strings.TrimSpace(service.ExecuteURL) == "" {
-				return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].executeUrl is required", i)
-			}
-		}
-		return services, nil
+	raw := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_SERVICES"))
+	if raw == "" {
+		return nil, errors.New("SPOKE_COMMAND_SERVICES is required")
 	}
 
-	commandsURL := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_URL"))
-	commandURL := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_URL"))
-	if commandsURL == "" {
-		return nil, errors.New("SPOKE_COMMANDS_URL is required when SPOKE_COMMAND_SERVICES is not set")
+	var services []ServiceDefinition
+	if err := json.Unmarshal([]byte(raw), &services); err != nil {
+		return nil, fmt.Errorf("invalid SPOKE_COMMAND_SERVICES: %w", err)
 	}
-	if commandURL == "" {
-		return nil, errors.New("SPOKE_COMMAND_URL is required when SPOKE_COMMAND_SERVICES is not set")
+	if len(services) == 0 {
+		return nil, errors.New("SPOKE_COMMAND_SERVICES cannot be empty")
 	}
-
-	return []ServiceDefinition{{
-		Name:        defaultServiceName,
-		CommandsURL: commandsURL,
-		ExecuteURL:  commandURL,
-	}}, nil
+	for i, service := range services {
+		if strings.TrimSpace(service.CommandsURL) == "" {
+			return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].commandsUrl is required", i)
+		}
+		if strings.TrimSpace(service.ExecuteURL) == "" {
+			return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].executeUrl is required", i)
+		}
+	}
+	return services, nil
 }
 
 func (b *Bridge) fetchAllCommandsWithRetry() (map[string]CommandSpec, map[string]string, map[string]int, error) {

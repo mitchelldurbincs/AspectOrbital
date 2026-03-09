@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 func normalizeCommandSpecs(input []CommandSpec) []CommandSpec {
@@ -12,7 +14,7 @@ func normalizeCommandSpecs(input []CommandSpec) []CommandSpec {
 	commands := make([]CommandSpec, 0, len(input))
 
 	for _, raw := range input {
-		commandName := strings.ToLower(strings.TrimSpace(raw.Name))
+		commandName := spokecontract.NormalizeCommandName(raw.Name)
 		if commandName == "" || commandName == "ping" {
 			continue
 		}
@@ -25,7 +27,7 @@ func normalizeCommandSpecs(input []CommandSpec) []CommandSpec {
 
 		description := strings.TrimSpace(raw.Description)
 		if description == "" {
-			description = legacyCommandDescription
+			description = defaultCommandDescription
 		}
 
 		command := CommandSpec{
@@ -54,7 +56,7 @@ func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 	options := make([]CommandOptionSpec, 0, len(input))
 
 	for _, raw := range input {
-		name := strings.ToLower(strings.TrimSpace(raw.Name))
+		name := spokecontract.NormalizeCommandName(raw.Name)
 		if name == "" {
 			continue
 		}
@@ -66,6 +68,9 @@ func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 		}
 
 		optionType := normalizeOptionType(raw.Type)
+		if optionType == "" {
+			continue
+		}
 		description := strings.TrimSpace(raw.Description)
 		if description == "" {
 			description = "Optional value"
@@ -84,20 +89,7 @@ func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 }
 
 func normalizeOptionType(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "string":
-		return "string"
-	case "integer", "int":
-		return "integer"
-	case "number", "float", "float64", "double":
-		return "number"
-	case "boolean", "bool":
-		return "boolean"
-	case "attachment", "file":
-		return "attachment"
-	default:
-		return "string"
-	}
+	return spokecontract.NormalizeOptionType(raw)
 }
 
 func NormalizeOptionType(raw string) string {

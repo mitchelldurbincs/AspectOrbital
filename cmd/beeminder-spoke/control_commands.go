@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[string]any, int, error) {
@@ -27,9 +29,6 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 		}, http.StatusOK, nil
 	case a.cfg.Commands.Snooze:
 		durationInput := request.optionString(snoozeDurationOptionName)
-		if durationInput == "" {
-			durationInput = request.Argument
-		}
 
 		duration, err := parseSnoozeArgument(durationInput, a.cfg.DefaultSnooze)
 		if err != nil {
@@ -65,13 +64,13 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 }
 
 type commandRequest struct {
-	Command  string         `json:"command"`
-	Argument string         `json:"argument"`
-	Options  map[string]any `json:"options,omitempty"`
+	Command string                       `json:"command"`
+	Context spokecontract.CommandContext `json:"context"`
+	Options map[string]any               `json:"options,omitempty"`
 }
 
 func (c commandRequest) normalizedCommand() string {
-	return normalizeCommand(c.Command)
+	return spokecontract.NormalizeCommandName(c.Command)
 }
 
 func (c commandRequest) optionString(name string) string {

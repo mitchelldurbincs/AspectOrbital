@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 var respondEphemeralFunc = respondEphemeral
@@ -45,7 +47,8 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 		execCtx, cancel := context.WithTimeout(context.Background(), spokeCommandHTTPTimeout)
 		defer cancel()
 
-		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, options)
+		commandContext := interactionCommandContext(i)
+		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, commandContext, options)
 		if err != nil {
 			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
 			if respondErr := followupEphemeralFunc(s, i.Interaction, formatSpokeCommandFailure(err)); respondErr != nil {
@@ -58,6 +61,22 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 			logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
 		}
 	}
+}
+
+func interactionCommandContext(i *discordgo.InteractionCreate) spokecontract.CommandContext {
+	ctx := spokecontract.CommandContext{
+		GuildID:   strings.TrimSpace(i.GuildID),
+		ChannelID: strings.TrimSpace(i.ChannelID),
+	}
+
+	if i.Member != nil && i.Member.User != nil {
+		ctx.DiscordUserID = strings.TrimSpace(i.Member.User.ID)
+	}
+	if ctx.DiscordUserID == "" && i.User != nil {
+		ctx.DiscordUserID = strings.TrimSpace(i.User.ID)
+	}
+
+	return ctx
 }
 
 func deferEphemeral(session *discordgo.Session, interaction *discordgo.Interaction) error {

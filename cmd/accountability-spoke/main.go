@@ -19,10 +19,10 @@ import (
 	"personal-infrastructure/pkg/beeminder"
 	"personal-infrastructure/pkg/configutil"
 	"personal-infrastructure/pkg/lifecycle"
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 const (
-	commandCatalogVersion = 1
 	commandCatalogService = "accountability-spoke"
 )
 
@@ -230,4 +230,4 @@ func warnOnKnownSpokePortCollisions(logger *log.Logger) {
 	}
 }
 
-func normalizeCommand(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
+func normalizeCommand(v string) string { return spokecontract.NormalizeCommandName(v) }

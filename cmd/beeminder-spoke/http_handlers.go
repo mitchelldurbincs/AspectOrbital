@@ -43,6 +43,10 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if payload.Context.DiscordUserID == "" {
+		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
+		return
+	}
 
 	result, statusCode, err := a.executeCommand(time.Now().UTC(), payload)
 	if err != nil {
@@ -86,8 +90,8 @@ func (a *spokeApp) handleSnooze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, statusCode, err := a.executeCommand(time.Now().UTC(), commandRequest{
-		Command:  a.cfg.Commands.Snooze,
-		Argument: argument,
+		Command: a.cfg.Commands.Snooze,
+		Options: map[string]any{snoozeDurationOptionName: argument},
 	})
 	if err != nil {
 		http.Error(w, err.Error(), statusCode)

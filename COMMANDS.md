@@ -27,7 +27,7 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
     - `deadline` (string, required; RFC3339, unix seconds, or duration)
 - `/proof` — submit proof for your active commitment.
   - option: `proof` (attachment, required)
-- `/status` — show your active commitment.
+- `/accountability-status` — show your active commitment.
 - `/cancel` — cancel your active commitment.
 
 ## `finance-spoke` (discovered via `/control/commands`)

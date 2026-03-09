@@ -63,6 +63,8 @@ cargo run --manifest-path cmd/kalshi-spoke/Cargo.toml
 - `GET /control/commands`
 - `POST /control/command`
 
+`POST /control/command` requires `context.discordUserId` in the JSON body.
+
 Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
 
 ## Discord command catalog

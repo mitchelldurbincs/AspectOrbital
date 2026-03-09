@@ -8,19 +8,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 const (
 	defaultCommandsURL            = "http://127.0.0.1:8090/control/commands"
 	defaultCommandURL             = "http://127.0.0.1:8090/control/command"
 	defaultServiceName            = "default"
-	legacyArgumentOption          = "argument"
 	discoveryAttemptCount         = 8
 	discoveryAttemptDelay         = 2 * time.Second
 	CommandHTTPTimeout            = 8 * time.Second
-	legacyCommandDescription      = "Command owned by configured spoke service"
-	legacyArgumentOptionHelp      = "Optional argument, like 30m"
-	defaultCommandOptionType      = "string"
+	defaultCommandDescription     = "Command owned by configured spoke service"
 	commandFailurePrefix          = "Command failed: "
 	discordResponseCharacterLimit = 1900
 )
@@ -42,34 +41,15 @@ type ServiceDefinition struct {
 	ExecuteURL  string `json:"executeUrl"`
 }
 
-type CommandCatalog struct {
-	Version  int           `json:"version"`
-	Service  string        `json:"service"`
-	Commands []CommandSpec `json:"commands"`
-	Names    []string      `json:"commandNames,omitempty"`
-}
-
-type legacyCommandCatalog struct {
-	Commands []string `json:"commands"`
-}
-
-type CommandSpec struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Options     []CommandOptionSpec `json:"options,omitempty"`
-}
-
-type CommandOptionSpec struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
+type CommandCatalog = spokecontract.CommandCatalog
+type CommandSpec = spokecontract.CommandSpec
+type CommandOptionSpec = spokecontract.CommandOptionSpec
+type CommandContext = spokecontract.CommandContext
 
 type commandRequest struct {
-	Command  string         `json:"command"`
-	Argument string         `json:"argument,omitempty"`
-	Options  map[string]any `json:"options,omitempty"`
+	Command string         `json:"command"`
+	Context CommandContext `json:"context"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 type commandResponse struct {

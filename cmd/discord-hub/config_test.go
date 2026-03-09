@@ -18,8 +18,6 @@ func clearHubEnv(t *testing.T) {
 		"DISCORD_CHANNEL_MANDARIN_STREAKS",
 		"DISCORD_CHANNEL_MAP",
 		"SPOKE_COMMANDS_ENABLED",
-		"SPOKE_COMMANDS_URL",
-		"SPOKE_COMMAND_URL",
 		"SPOKE_COMMAND_SERVICES",
 	}
 
@@ -49,8 +47,7 @@ func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
 	t.Setenv("DISCORD_CHANNEL_MANDARIN_STREAKS", "222")
 	t.Setenv("SPOKE_COMMANDS_ENABLED", "true")
-	t.Setenv("SPOKE_COMMANDS_URL", "http://127.0.0.1:8090/control/commands")
-	t.Setenv("SPOKE_COMMAND_URL", "http://127.0.0.1:8090/control/command")
+	t.Setenv("SPOKE_COMMAND_SERVICES", `[{"name":"beeminder-spoke","commandsUrl":"http://127.0.0.1:8090/control/commands","executeUrl":"http://127.0.0.1:8090/control/command"}]`)
 
 	cfg, err := loadHubConfig()
 	if err != nil {
@@ -136,7 +133,7 @@ func TestLoadHubConfigRequiresSpokeBridgeURLsWhenEnabled(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when spoke bridge URLs are missing")
 	}
-	if !strings.Contains(err.Error(), "set SPOKE_COMMAND_SERVICES or both SPOKE_COMMANDS_URL and SPOKE_COMMAND_URL") {
+	if !strings.Contains(err.Error(), "SPOKE_COMMAND_SERVICES is required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

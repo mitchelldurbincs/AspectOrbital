@@ -24,7 +24,6 @@ import (
 const summaryRunTimeout = 30 * time.Second
 
 const (
-	commandCatalogVersion = 1
 	commandCatalogService = "finance-spoke"
 	commandNameStatus     = "finance-status"
 )

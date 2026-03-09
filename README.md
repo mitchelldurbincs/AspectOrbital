@@ -42,7 +42,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 
 - Hub-and-spoke architecture with HTTP-based service discovery and command registration
 - Discord slash commands for Beeminder reminders (`/started`, `/snooze`, `/resume`, `/status`)
-- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/status`, `/cancel`)
+- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/accountability-status`, `/cancel`)
 - Configurable reminder engine with snooze, grace periods, and active-session detection
 - Plaid integration for recurring subscription detection and weekly summary generation
 - Kalshi WebSocket price streaming with configurable trigger thresholds
@@ -77,6 +77,7 @@ Per-service `.env` files can also be placed in each `cmd/*/` directory for local
 
 - [COMMANDS.md](COMMANDS.md) — Discord slash command reference
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Spoke lifecycle patterns and shutdown conventions
+- [contracts/spoke-contract-v1.schema.json](contracts/spoke-contract-v1.schema.json) — canonical spoke/hub wire contract
 - [cmd/kalshi-spoke/README.md](cmd/kalshi-spoke/README.md) — Kalshi spoke details
 - [cmd/accountability-spoke/README.md](cmd/accountability-spoke/README.md) — Accountability spoke details
 

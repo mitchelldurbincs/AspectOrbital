@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
-func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, options map[string]any) (string, error) {
+func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, commandContext CommandContext, options map[string]any) (string, error) {
 	if b == nil {
 		return "", errors.New("spoke command bridge is disabled")
 	}
@@ -30,13 +32,12 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, options
 		return "", fmt.Errorf("owning service %q not configured for command %q", serviceName, commandName)
 	}
 
-	request := commandRequest{Command: commandName}
+	request := commandRequest{Command: commandName, Context: commandContext}
 	if len(options) > 0 {
 		request.Options = pruneCommandOptions(options)
 	}
-
-	if argument, ok := request.Options[legacyArgumentOption].(string); ok {
-		request.Argument = strings.TrimSpace(argument)
+	if err := spokecontract.ValidateCommandRequestSchema(spokecontract.CommandRequest(request)); err != nil {
+		return "", fmt.Errorf("invalid spoke command request: %w", err)
 	}
 
 	requestBody, err := json.Marshal(request)
@@ -71,6 +72,9 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, options
 
 	var response commandResponse
 	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("invalid spoke command response: %w", err)
+	}
+	if err := spokecontract.ValidateCommandResponseSchema(spokecontract.CommandResponse(response)); err != nil {
 		return "", fmt.Errorf("invalid spoke command response: %w", err)
 	}
 

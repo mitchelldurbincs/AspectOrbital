@@ -22,29 +22,17 @@ func TestParseSpokeCommandCatalogSupportsModernPayload(t *testing.T) {
 	}
 }
 
-func TestParseSpokeCommandCatalogSupportsLegacyPayload(t *testing.T) {
-	body := []byte(`{"commands":["started","snooze"]}`)
-
-	commands, err := parseSpokeCommandCatalog(body)
-	if err != nil {
-		t.Fatalf("parseSpokeCommandCatalog returned error: %v", err)
-	}
-
-	if len(commands) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(commands))
-	}
-	if commands[0].Description != legacySpokeCommandDescription {
-		t.Fatalf("unexpected legacy description: %q", commands[0].Description)
-	}
-	if len(commands[0].Options) != 1 || commands[0].Options[0].Name != legacySpokeArgumentOption {
-		t.Fatalf("unexpected legacy options: %#v", commands[0].Options)
-	}
-}
-
 func TestParseSpokeCommandCatalogRejectsUnrecognizedPayload(t *testing.T) {
 	_, err := parseSpokeCommandCatalog([]byte(`{"commands":[]}`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestParseSpokeCommandCatalogRejectsLegacyPayload(t *testing.T) {
+	_, err := parseSpokeCommandCatalog([]byte(`{"commands":["started","snooze"]}`))
+	if err == nil {
+		t.Fatal("expected error for legacy command payload")
 	}
 }
 
@@ -73,8 +61,8 @@ func TestNormalizeSpokeCommandSpecsFiltersDedupesAndSkipsPing(t *testing.T) {
 	if got[0].Name != "resume" || got[1].Name != "status" {
 		t.Fatalf("expected sorted command names [resume status], got [%s %s]", got[0].Name, got[1].Name)
 	}
-	if got[1].Description != legacySpokeCommandDescription {
-		t.Fatalf("expected fallback description %q, got %q", legacySpokeCommandDescription, got[1].Description)
+	if got[1].Description != "Command owned by configured spoke service" {
+		t.Fatalf("unexpected fallback description: %q", got[1].Description)
 	}
 	if len(got[1].Options) != 1 {
 		t.Fatalf("expected one normalized option, got %#v", got[1].Options)
@@ -93,7 +81,7 @@ func TestNormalizeSpokeOptionType(t *testing.T) {
 		"float64":    "number",
 		"bool":       "boolean",
 		"attachment": "attachment",
-		"weirdtype":  "string",
+		"weirdtype":  "",
 	}
 
 	for input, want := range tests {

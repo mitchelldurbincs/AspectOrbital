@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
@@ -18,7 +20,7 @@ func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"commands":[{"name":" STATUS ","description":""},{"name":"ping","description":"reserved"}]}`)
+		_, _ = io.WriteString(w, `{"version":1,"service":"test-spoke","commands":[{"name":"status","description":"Status command"},{"name":"ping","description":"reserved"}]}`)
 	}))
 	defer server.Close()
 
@@ -36,8 +38,8 @@ func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
 	if len(commands) != 1 || commands[0].Name != "status" {
 		t.Fatalf("unexpected normalized commands: %#v", commands)
 	}
-	if commands[0].Description != legacySpokeCommandDescription {
-		t.Fatalf("expected fallback description %q, got %q", legacySpokeCommandDescription, commands[0].Description)
+	if commands[0].Description != "Status command" {
+		t.Fatalf("unexpected description: %q", commands[0].Description)
 	}
 }
 
@@ -83,8 +85,8 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 		commandURL: server.URL,
 	}
 
-	message, err := bridge.ExecuteCommand(context.Background(), "status", map[string]any{
-		"argument": " 30m ",
+	message, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, map[string]any{
+		"duration": " 30m ",
 		"Flag":     true,
 		"bad key":  "ignored",
 	})
@@ -98,8 +100,11 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	if captured.Command != "status" {
 		t.Fatalf("unexpected forwarded command: %q", captured.Command)
 	}
-	if captured.Argument != "30m" {
-		t.Fatalf("expected forwarded argument 30m, got %q", captured.Argument)
+	if captured.Context.DiscordUserID != "u-1" {
+		t.Fatalf("expected forwarded context user id, got %#v", captured.Context)
+	}
+	if captured.Options["duration"] != "30m" {
+		t.Fatalf("expected duration option 30m, got %#v", captured.Options["duration"])
 	}
 	if captured.Options["flag"] != true {
 		t.Fatalf("expected flag option true, got %#v", captured.Options["flag"])
@@ -109,7 +114,7 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	}
 }
 
-func TestExecuteCommandUsesFallbackMessageWhenMissing(t *testing.T) {
+func TestExecuteCommandRejectsMissingMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"status":"ok","command":"status","message":""}`)
@@ -121,12 +126,9 @@ func TestExecuteCommandUsesFallbackMessageWhenMissing(t *testing.T) {
 		commandURL: server.URL,
 	}
 
-	message, err := bridge.ExecuteCommand(context.Background(), "status", nil)
-	if err != nil {
-		t.Fatalf("ExecuteCommand returned error: %v", err)
-	}
-	if message != "Command `status` acknowledged." {
-		t.Fatalf("unexpected fallback message: %q", message)
+	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
+	if err == nil {
+		t.Fatal("expected error for missing response message")
 	}
 }
 
@@ -141,7 +143,7 @@ func TestExecuteCommandReturnsErrorMessageForNon2xxResponse(t *testing.T) {
 		commandURL: server.URL,
 	}
 
-	_, err := bridge.ExecuteCommand(context.Background(), "status", nil)
+	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

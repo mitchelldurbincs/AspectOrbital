@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/accountability"
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 type spokeApp struct {
@@ -17,30 +18,10 @@ type spokeApp struct {
 	service *accountability.Service
 }
 
-type commandRequest struct {
-	Command string         `json:"command"`
-	Options map[string]any `json:"options,omitempty"`
-}
-
-type commandCatalogResponse struct {
-	Version  int                 `json:"version"`
-	Service  string              `json:"service"`
-	Commands []commandDefinition `json:"commands"`
-	Names    []string            `json:"commandNames"`
-}
-
-type commandDefinition struct {
-	Name        string                    `json:"name"`
-	Description string                    `json:"description"`
-	Options     []commandOptionDefinition `json:"options,omitempty"`
-}
-
-type commandOptionDefinition struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
+type commandRequest = spokecontract.CommandRequest
+type commandCatalogResponse = spokecontract.CommandCatalog
+type commandDefinition = spokecontract.CommandSpec
+type commandOptionDefinition = spokecontract.CommandOptionSpec
 
 func (a *spokeApp) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -48,7 +29,7 @@ func (a *spokeApp) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 
 func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, commandCatalogResponse{
-		Version: commandCatalogVersion,
+		Version: spokecontract.CatalogVersion,
 		Service: commandCatalogService,
 		Commands: []commandDefinition{
 			{Name: a.cfg.CommitCommandName, Description: "Commit to a task with a deadline", Options: []commandOptionDefinition{{Name: "task", Type: "string", Description: "Task description", Required: true}, {Name: "goal", Type: "string", Description: "Beeminder goal slug", Required: true}, {Name: "deadline", Type: "string", Description: "RFC3339 timestamp or duration like 2h", Required: true}}},
@@ -66,13 +47,13 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	userID := mapOptionString(req.Options, "discord_user_id")
+	userID := strings.TrimSpace(req.Context.DiscordUserID)
 	if userID == "" {
-		http.Error(w, "discord_user_id is required", http.StatusBadRequest)
+		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
 		return
 	}
 
-	cmd := normalizeCommand(req.Command)
+	cmd := spokecontract.NormalizeCommandName(req.Command)
 	now := time.Now().UTC()
 	switch cmd {
 	case a.cfg.CommitCommandName:

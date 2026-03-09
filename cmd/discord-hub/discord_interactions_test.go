@@ -11,12 +11,15 @@ import (
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 func commandInteraction(name string, options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.InteractionCreate {
 	return &discordgo.InteractionCreate{
 		Interaction: &discordgo.Interaction{
 			Type: discordgo.InteractionApplicationCommand,
+			User: &discordgo.User{ID: "test-user"},
 			Data: discordgo.ApplicationCommandInteractionData{
 				Name:    name,
 				Options: options,
@@ -132,7 +135,11 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	})
 
 	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)
-	handler(nil, commandInteraction("status", []*discordgo.ApplicationCommandInteractionDataOption{{Name: "argument", Value: " 30m "}}))
+	interaction := commandInteraction("status", []*discordgo.ApplicationCommandInteractionDataOption{{Name: "duration", Value: " 30m "}})
+	interaction.Interaction.Member = &discordgo.Member{User: &discordgo.User{ID: "u-123"}}
+	interaction.Interaction.GuildID = "g-456"
+	interaction.Interaction.ChannelID = "c-789"
+	handler(nil, interaction)
 
 	if len(messages) != 1 || messages[0] != "from spoke" {
 		t.Fatalf("unexpected response messages: %#v", messages)
@@ -140,8 +147,11 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	if captured.Command != "status" {
 		t.Fatalf("unexpected command forwarded to spoke: %q", captured.Command)
 	}
-	if got := strings.TrimSpace(captured.Argument); got != "30m" {
-		t.Fatalf("expected forwarded argument 30m, got %q", captured.Argument)
+	if captured.Context != (spokecontract.CommandContext{DiscordUserID: "u-123", GuildID: "g-456", ChannelID: "c-789"}) {
+		t.Fatalf("unexpected forwarded context: %#v", captured.Context)
+	}
+	if got := strings.TrimSpace(captured.Options["duration"].(string)); got != "30m" {
+		t.Fatalf("expected forwarded duration 30m, got %#v", captured.Options["duration"])
 	}
 }
 

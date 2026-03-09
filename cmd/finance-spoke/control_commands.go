@@ -6,33 +6,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
-type commandRequest struct {
-	Command  string         `json:"command"`
-	Argument string         `json:"argument,omitempty"`
-	Options  map[string]any `json:"options,omitempty"`
-}
-
-type commandCatalogResponse struct {
-	Version  int                 `json:"version"`
-	Service  string              `json:"service"`
-	Commands []commandDefinition `json:"commands"`
-	Names    []string            `json:"commandNames"`
-}
-
-type commandDefinition struct {
-	Name        string                    `json:"name"`
-	Description string                    `json:"description"`
-	Options     []commandOptionDefinition `json:"options,omitempty"`
-}
-
-type commandOptionDefinition struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
+type commandRequest = spokecontract.CommandRequest
+type commandCatalogResponse = spokecontract.CommandCatalog
+type commandDefinition = spokecontract.CommandSpec
+type commandOptionDefinition = spokecontract.CommandOptionSpec
 
 func (a *financeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -41,7 +22,7 @@ func (a *financeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, commandCatalogResponse{
-		Version: commandCatalogVersion,
+		Version: spokecontract.CatalogVersion,
 		Service: commandCatalogService,
 		Commands: []commandDefinition{
 			{
@@ -64,8 +45,12 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if strings.TrimSpace(req.Context.DiscordUserID) == "" {
+		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
+		return
+	}
 
-	commandName := normalizeCommand(req.Command)
+	commandName := spokecontract.NormalizeCommandName(req.Command)
 	switch commandName {
 	case commandNameStatus:
 		now := time.Now()
@@ -84,10 +69,6 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, unknownCommandError(req.Command, []string{commandNameStatus}), http.StatusBadRequest)
 	}
-}
-
-func normalizeCommand(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func unknownCommandError(requested string, valid []string) string {

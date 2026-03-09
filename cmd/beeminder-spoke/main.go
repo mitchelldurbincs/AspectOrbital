@@ -20,7 +20,6 @@ import (
 
 const (
 	cycleTimeout               = 30 * time.Second
-	commandCatalogVersion      = 1
 	commandCatalogService      = "beeminder-spoke"
 	snoozeDurationOptionName   = "duration"
 	snoozeDurationOptionType   = "string"

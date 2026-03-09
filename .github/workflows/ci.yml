@@ -26,6 +26,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Validate contract schema
+        run: go test ./pkg/spokecontract -run Schema
+
       - name: Test
         run: go test ./...
 

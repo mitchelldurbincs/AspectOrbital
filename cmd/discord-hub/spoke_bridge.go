@@ -10,13 +10,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 const (
-	defaultSpokeCommandsURL       = "http://127.0.0.1:8090/control/commands"
-	defaultSpokeCommandURL        = "http://127.0.0.1:8090/control/command"
-	legacySpokeArgumentOption     = "argument"
-	legacySpokeCommandDescription = "Command owned by configured spoke service"
 	spokeCommandHTTPTimeout       = spokebridge.CommandHTTPTimeout
 	discordResponseCharacterLimit = 1900
 )
@@ -26,9 +23,9 @@ type spokeCommandSpec = spokebridge.CommandSpec
 type spokeCommandOptionSpec = spokebridge.CommandOptionSpec
 
 type spokeCommandRequest struct {
-	Command  string         `json:"command"`
-	Argument string         `json:"argument,omitempty"`
-	Options  map[string]any `json:"options,omitempty"`
+	Command string                       `json:"command"`
+	Context spokecontract.CommandContext `json:"context"`
+	Options map[string]any               `json:"options,omitempty"`
 }
 
 type spokeCommandResponse struct {
@@ -113,13 +110,13 @@ func (b *spokeCommandBridge) BuildDiscordCommands() []*discordgo.ApplicationComm
 	return delegate.BuildDiscordCommands()
 }
 
-func (b *spokeCommandBridge) ExecuteCommand(ctx context.Context, commandName string, options map[string]any) (string, error) {
+func (b *spokeCommandBridge) ExecuteCommand(ctx context.Context, commandName string, commandContext spokecontract.CommandContext, options map[string]any) (string, error) {
 	delegate := b.delegate()
 	if delegate == nil {
 		return "", errors.New("spoke command bridge is disabled")
 	}
 
-	return delegate.ExecuteCommand(ctx, commandName, options)
+	return delegate.ExecuteCommand(ctx, commandName, commandContext, options)
 }
 
 func parseSpokeCommandCatalog(body []byte) ([]spokeCommandSpec, error) {

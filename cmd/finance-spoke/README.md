@@ -53,6 +53,8 @@ go run ./cmd/finance-spoke
 - `POST /plaid/link-token`
 - `POST /plaid/exchange-public-token`
 
+`POST /control/command` requires `context.discordUserId` in the JSON body.
+
 ## Discord command catalog
 
 `finance-spoke` now exposes a spoke command catalog consumed by `discord-hub`:

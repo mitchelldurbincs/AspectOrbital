@@ -86,10 +86,19 @@ struct CommandDefinition {
 #[derive(Debug, Deserialize)]
 struct CommandRequest {
     command: String,
-    #[allow(dead_code)]
-    argument: Option<String>,
+    context: CommandContext,
     #[allow(dead_code)]
     options: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandContext {
+    discord_user_id: String,
+    #[allow(dead_code)]
+    guild_id: Option<String>,
+    #[allow(dead_code)]
+    channel_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,6 +360,13 @@ async fn control_command(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CommandRequest>,
 ) -> Result<Json<CommandResponse>, (StatusCode, String)> {
+    if request.context.discord_user_id.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "context.discordUserId is required".to_string(),
+        ));
+    }
+
     let command = request.command.trim().to_ascii_lowercase();
     match command.as_str() {
         COMMAND_NAME_STATUS => {

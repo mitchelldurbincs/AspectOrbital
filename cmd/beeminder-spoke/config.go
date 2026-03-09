@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/configutil"
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 type config struct {
@@ -231,21 +232,9 @@ func validateConfig(cfg config) error {
 }
 
 func isValidSlashCommandName(value string) bool {
-	if len(value) == 0 || len(value) > 32 {
-		return false
-	}
-
-	for _, r := range value {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
-			continue
-		}
-
-		return false
-	}
-
-	return true
+	return spokecontract.ValidateCommandName(value) == nil
 }
 
 func normalizeCommand(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
+	return spokecontract.NormalizeCommandName(raw)
 }

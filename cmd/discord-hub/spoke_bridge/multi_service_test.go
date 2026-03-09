@@ -9,16 +9,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"personal-infrastructure/pkg/spokecontract"
 )
 
 func TestFetchAllCommandsWithRetryMergesCatalogs(t *testing.T) {
 	alpha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"commands":[{"name":"status"}]}`)
+		_, _ = io.WriteString(w, `{"version":1,"service":"alpha","commands":[{"name":"status","description":"status"}]}`)
 	}))
 	defer alpha.Close()
 
 	bravo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"commands":[{"name":"sync"}]}`)
+		_, _ = io.WriteString(w, `{"version":1,"service":"bravo","commands":[{"name":"sync","description":"sync"}]}`)
 	}))
 	defer bravo.Close()
 
@@ -51,12 +53,12 @@ func TestFetchAllCommandsWithRetryMergesCatalogs(t *testing.T) {
 
 func TestFetchAllCommandsWithRetryRejectsDuplicateCommands(t *testing.T) {
 	alpha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"commands":[{"name":"status"}]}`)
+		_, _ = io.WriteString(w, `{"version":1,"service":"alpha","commands":[{"name":"status","description":"status"}]}`)
 	}))
 	defer alpha.Close()
 
 	bravo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"commands":[{"name":"status"}]}`)
+		_, _ = io.WriteString(w, `{"version":1,"service":"bravo","commands":[{"name":"status","description":"status"}]}`)
 	}))
 	defer bravo.Close()
 
@@ -112,7 +114,7 @@ func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 		map[string]string{"sync": "bravo"},
 	)
 
-	msg, err := bridge.ExecuteCommand(context.Background(), "sync", nil)
+	msg, err := bridge.ExecuteCommand(context.Background(), "sync", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCommand() error = %v", err)
 	}

@@ -61,10 +61,8 @@ func loadHubConfig() (hubConfig, error) {
 
 	if spokeCommandsEnabled {
 		servicesRaw := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_SERVICES"))
-		commandsURL := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_URL"))
-		commandURL := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_URL"))
-		if servicesRaw == "" && (commandsURL == "" || commandURL == "") {
-			return hubConfig{}, errors.New("set SPOKE_COMMAND_SERVICES or both SPOKE_COMMANDS_URL and SPOKE_COMMAND_URL")
+		if servicesRaw == "" {
+			return hubConfig{}, errors.New("SPOKE_COMMAND_SERVICES is required when SPOKE_COMMANDS_ENABLED=true")
 		}
 	}
 
