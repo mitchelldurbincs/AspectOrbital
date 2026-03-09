@@ -3,6 +3,7 @@ package accountability
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ func (f *fakeBeeminder) CreateDatapoint(_ context.Context, req Datapoint) error 
 
 func testDBPath(t *testing.T) string {
 	t.Helper()
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not found in PATH")
+	}
 	path := filepath.Join(t.TempDir(), "accountability.sqlite")
 	if err := Bootstrap(context.Background(), path); err != nil {
 		t.Fatal(err)
@@ -102,6 +106,9 @@ func TestProofHandlingIsIdempotent(t *testing.T) {
 }
 
 func TestBootstrapCreatesDBFile(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not found in PATH")
+	}
 	path := filepath.Join(t.TempDir(), "db.sqlite")
 	if err := Bootstrap(context.Background(), path); err != nil {
 		t.Fatal(err)

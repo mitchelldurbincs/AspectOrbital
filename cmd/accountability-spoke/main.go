@@ -25,7 +25,6 @@ const (
 )
 
 func main() {
-	cfg := loadConfig()
 	logger := log.New(os.Stdout, "accountability-spoke ", log.LstdFlags|log.Lmicroseconds)
 	if err := run(logger); err != nil {
 		logger.Printf("accountability-spoke exiting: %v", err)
@@ -103,6 +102,7 @@ func run(logger *log.Logger) error {
 		logger.Printf("exit error: %v", exitErr)
 		os.Exit(1)
 	}
+	return nil
 }
 
 type beeminderClientAdapter struct {

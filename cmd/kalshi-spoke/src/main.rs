@@ -36,7 +36,7 @@ struct RuntimeState {
     inner: Mutex<RuntimeSnapshot>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 struct RuntimeSnapshot {
     ws_connected: bool,
     last_ws_message_at: Option<DateTime<Utc>>,
@@ -90,17 +90,6 @@ struct WsErrorMessage {
 struct SellOutcome {
     summary: String,
     client_order_id: Option<String>,
-}
-
-impl Default for RuntimeSnapshot {
-    fn default() -> Self {
-        Self {
-            ws_connected: false,
-            last_ws_message_at: None,
-            last_ws_error: None,
-            markets: BTreeMap::new(),
-        }
-    }
 }
 
 impl RuntimeState {
