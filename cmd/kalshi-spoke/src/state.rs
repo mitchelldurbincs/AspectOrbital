@@ -64,11 +64,7 @@ impl StateStore {
     }
 
     pub async fn has_market(&self, market_ticker: &str) -> bool {
-        self.state
-            .lock()
-            .await
-            .markets
-            .contains_key(market_ticker)
+        self.state.lock().await.markets.contains_key(market_ticker)
     }
 
     pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
@@ -105,5 +101,47 @@ impl StateStore {
         })?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StateStore;
+    use std::{
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn unique_state_file() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("kalshi-state-{nanos}.json"))
+    }
+
+    #[tokio::test]
+    async fn update_market_persists_and_reloads() {
+        let path = unique_state_file();
+        let store = StateStore::load(&path).expect("initial load");
+
+        let updated = store
+            .update_market("INXD-TEST", |state| {
+                state.was_above_threshold = true;
+                state.last_yes_bid_dollars = Some("0.7500".to_string());
+                state.last_action = Some("trigger fired".to_string());
+            })
+            .await
+            .expect("update market");
+
+        assert!(updated.was_above_threshold);
+        assert_eq!(updated.last_yes_bid_dollars.as_deref(), Some("0.7500"));
+
+        let reloaded = StateStore::load(&path).expect("reload");
+        let snapshot = reloaded.market_snapshot("INXD-TEST").await;
+        assert!(snapshot.was_above_threshold);
+        assert_eq!(snapshot.last_action.as_deref(), Some("trigger fired"));
+
+        let _ = std::fs::remove_file(path);
     }
 }
