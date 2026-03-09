@@ -4,7 +4,7 @@
 
 ## Canonical local port map
 
-| Service | Default bind |
+| Service | Local bind |
 |---|---|
 | `discord-hub` | `127.0.0.1:8080` |
 | `beeminder-spoke` | `127.0.0.1:8090` |
@@ -15,7 +15,7 @@
 ## What it does
 
 - Polls Beeminder every minute (configurable).
-- After your configured reminder start time (default `19:00`), sends a reminder every 5 minutes until you hit your daily target.
+- After your configured reminder start time, sends a reminder every 5 minutes until you hit your daily target.
 - Auto-pauses reminders briefly when progress increases (to avoid pinging while you are actively working).
 - Supports manual controls: started, snooze, resume, status.
 
@@ -39,7 +39,7 @@ go run ./cmd/beeminder-spoke
 
 ## Control API
 
-The spoke exposes a small local API (default `127.0.0.1:8090`):
+The spoke exposes a small local API:
 
 - `GET /status`
 - `GET /control/commands`

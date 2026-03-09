@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -28,11 +29,50 @@ func loadHubConfig() (hubConfig, error) {
 		return hubConfig{}, errors.New("HUB_HTTP_ADDR is required")
 	}
 
+	guildID := strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID"))
+	if guildID == "" {
+		return hubConfig{}, errors.New("DISCORD_GUILD_ID is required")
+	}
+
+	criticalMention := strings.TrimSpace(os.Getenv("DISCORD_CRITICAL_MENTION"))
+	if criticalMention == "" {
+		return hubConfig{}, errors.New("DISCORD_CRITICAL_MENTION is required")
+	}
+
+	kalshiAlertsChannelID := strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_KALSHI_ALERTS"))
+	if kalshiAlertsChannelID == "" {
+		return hubConfig{}, errors.New("DISCORD_CHANNEL_KALSHI_ALERTS is required")
+	}
+
+	mandarinStreaksChannelID := strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_MANDARIN_STREAKS"))
+	if mandarinStreaksChannelID == "" {
+		return hubConfig{}, errors.New("DISCORD_CHANNEL_MANDARIN_STREAKS is required")
+	}
+
+	spokeCommandsEnabledRaw := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_ENABLED"))
+	if spokeCommandsEnabledRaw == "" {
+		return hubConfig{}, errors.New("SPOKE_COMMANDS_ENABLED is required")
+	}
+
+	spokeCommandsEnabled, err := strconv.ParseBool(spokeCommandsEnabledRaw)
+	if err != nil {
+		return hubConfig{}, errors.New("SPOKE_COMMANDS_ENABLED must be true or false")
+	}
+
+	if spokeCommandsEnabled {
+		servicesRaw := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_SERVICES"))
+		commandsURL := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_URL"))
+		commandURL := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_URL"))
+		if servicesRaw == "" && (commandsURL == "" || commandURL == "") {
+			return hubConfig{}, errors.New("set SPOKE_COMMAND_SERVICES or both SPOKE_COMMANDS_URL and SPOKE_COMMAND_URL")
+		}
+	}
+
 	return hubConfig{
 		DiscordToken:    token,
-		GuildID:         strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
+		GuildID:         guildID,
 		HTTPAddr:        httpAddr,
-		CriticalMention: strings.TrimSpace(os.Getenv("DISCORD_CRITICAL_MENTION")),
-		ChannelMap:      buildChannelMap(),
+		CriticalMention: criticalMention,
+		ChannelMap:      buildChannelMap(kalshiAlertsChannelID, mandarinStreaksChannelID),
 	}, nil
 }

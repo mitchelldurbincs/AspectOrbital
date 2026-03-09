@@ -17,6 +17,10 @@ func clearHubEnv(t *testing.T) {
 		"DISCORD_CHANNEL_KALSHI_ALERTS",
 		"DISCORD_CHANNEL_MANDARIN_STREAKS",
 		"DISCORD_CHANNEL_MAP",
+		"SPOKE_COMMANDS_ENABLED",
+		"SPOKE_COMMANDS_URL",
+		"SPOKE_COMMAND_URL",
+		"SPOKE_COMMAND_SERVICES",
 	}
 
 	for _, key := range keys {
@@ -40,6 +44,13 @@ func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "abc123")
 	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("DISCORD_GUILD_ID", "guild-1")
+	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
+	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
+	t.Setenv("DISCORD_CHANNEL_MANDARIN_STREAKS", "222")
+	t.Setenv("SPOKE_COMMANDS_ENABLED", "true")
+	t.Setenv("SPOKE_COMMANDS_URL", "http://127.0.0.1:8090/control/commands")
+	t.Setenv("SPOKE_COMMAND_URL", "http://127.0.0.1:8090/control/command")
 
 	cfg, err := loadHubConfig()
 	if err != nil {
@@ -66,11 +77,9 @@ func TestLoadHubConfigRequiresHTTPAddrWhenUnset(t *testing.T) {
 
 func TestBuildChannelMapMergesBuiltinsAndExtras(t *testing.T) {
 	clearHubEnv(t)
-	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", " 111 ")
-	t.Setenv("DISCORD_CHANNEL_MANDARIN_STREAKS", "")
 	t.Setenv("DISCORD_CHANNEL_MAP", " custom-one : 222 , malformed ,custom-two:333, mandarin-streaks:444, :oops, nope:, kalshi-alerts:555 ")
 
-	got := buildChannelMap()
+	got := buildChannelMap(" 111 ", "")
 	want := map[string]string{
 		"kalshi-alerts":    "555",
 		"mandarin-streaks": "444",
@@ -87,10 +96,47 @@ func TestBuildChannelMapIgnoresMalformedPairsAndEmptyValues(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_CHANNEL_MAP", "badpair, :123, empty:, ok:456")
 
-	got := buildChannelMap()
+	got := buildChannelMap("", "")
 	want := map[string]string{"ok": "456"}
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected channel map\nwant: %#v\ngot:  %#v", want, got)
+	}
+}
+
+func TestLoadHubConfigRequiresSpokeCommandsEnabled(t *testing.T) {
+	clearHubEnv(t)
+	t.Setenv("DISCORD_BOT_TOKEN", "token")
+	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("DISCORD_GUILD_ID", "guild-1")
+	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
+	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
+	t.Setenv("DISCORD_CHANNEL_MANDARIN_STREAKS", "222")
+
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected error for missing SPOKE_COMMANDS_ENABLED")
+	}
+	if !strings.Contains(err.Error(), "SPOKE_COMMANDS_ENABLED is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadHubConfigRequiresSpokeBridgeURLsWhenEnabled(t *testing.T) {
+	clearHubEnv(t)
+	t.Setenv("DISCORD_BOT_TOKEN", "token")
+	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("DISCORD_GUILD_ID", "guild-1")
+	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
+	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
+	t.Setenv("DISCORD_CHANNEL_MANDARIN_STREAKS", "222")
+	t.Setenv("SPOKE_COMMANDS_ENABLED", "true")
+
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected error when spoke bridge URLs are missing")
+	}
+	if !strings.Contains(err.Error(), "set SPOKE_COMMAND_SERVICES or both SPOKE_COMMANDS_URL and SPOKE_COMMAND_URL") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

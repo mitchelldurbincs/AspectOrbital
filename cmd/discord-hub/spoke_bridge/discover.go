@@ -57,11 +57,25 @@ func configuredServices() ([]ServiceDefinition, error) {
 		if len(services) == 0 {
 			return nil, errors.New("SPOKE_COMMAND_SERVICES cannot be empty")
 		}
+		for i, service := range services {
+			if strings.TrimSpace(service.CommandsURL) == "" {
+				return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].commandsUrl is required", i)
+			}
+			if strings.TrimSpace(service.ExecuteURL) == "" {
+				return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].executeUrl is required", i)
+			}
+		}
 		return services, nil
 	}
 
 	commandsURL := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_URL"))
 	commandURL := strings.TrimSpace(os.Getenv("SPOKE_COMMAND_URL"))
+	if commandsURL == "" {
+		return nil, errors.New("SPOKE_COMMANDS_URL is required when SPOKE_COMMAND_SERVICES is not set")
+	}
+	if commandURL == "" {
+		return nil, errors.New("SPOKE_COMMAND_URL is required when SPOKE_COMMAND_SERVICES is not set")
+	}
 
 	return []ServiceDefinition{{
 		Name:        defaultServiceName,

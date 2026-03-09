@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"personal-infrastructure/pkg/accountability"
 	"personal-infrastructure/pkg/beeminder"
+	"personal-infrastructure/pkg/configutil"
 	"personal-infrastructure/pkg/lifecycle"
 )
 
@@ -40,7 +42,10 @@ func run(logger *log.Logger) error {
 		}
 	}
 
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
 	warnOnKnownSpokePortCollisions(logger)
 
 	if err := accountability.Bootstrap(context.Background(), cfg.DBPath); err != nil {
@@ -134,33 +139,82 @@ type config struct {
 	BeeminderUsername  string
 }
 
-func loadConfig() config {
-	poll := 45 * time.Second
-	if raw := strings.TrimSpace(os.Getenv("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL")); raw != "" {
-		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
-			poll = d
-		}
+func loadConfig() (config, error) {
+	var cfg config
+	var err error
+
+	cfg.HTTPAddr, err = configutil.StringEnvRequired("ACCOUNTABILITY_SPOKE_HTTP_ADDR")
+	if err != nil {
+		return config{}, err
 	}
-	return config{
-		HTTPAddr:           getenv("ACCOUNTABILITY_SPOKE_HTTP_ADDR", "127.0.0.1:8093"),
-		DBPath:             getenv("ACCOUNTABILITY_DB_PATH", "file:accountability.db?_pragma=busy_timeout(5000)"),
-		ExpiryPollInterval: poll,
-		CommitCommandName:  normalizeCommand(getenv("ACCOUNTABILITY_COMMAND_COMMIT", "commit")),
-		ProofCommandName:   normalizeCommand(getenv("ACCOUNTABILITY_COMMAND_PROOF", "proof")),
-		StatusCommandName:  normalizeCommand(getenv("ACCOUNTABILITY_COMMAND_STATUS", "status")),
-		CancelCommandName:  normalizeCommand(getenv("ACCOUNTABILITY_COMMAND_CANCEL", "cancel")),
-		BeeminderBaseURL:   getenv("BEEMINDER_API_BASE_URL", "https://www.beeminder.com/api/v1"),
-		BeeminderAuthToken: strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN")),
-		BeeminderUsername:  strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME")),
+
+	cfg.DBPath, err = configutil.StringEnvRequired("ACCOUNTABILITY_DB_PATH")
+	if err != nil {
+		return config{}, err
 	}
+
+	cfg.ExpiryPollInterval, err = configutil.DurationEnvRequired("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL")
+	if err != nil {
+		return config{}, err
+	}
+
+	commitCommandName, err := configutil.StringEnvRequired("ACCOUNTABILITY_COMMAND_COMMIT")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.CommitCommandName = normalizeCommand(commitCommandName)
+
+	proofCommandName, err := configutil.StringEnvRequired("ACCOUNTABILITY_COMMAND_PROOF")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.ProofCommandName = normalizeCommand(proofCommandName)
+
+	statusCommandName, err := configutil.StringEnvRequired("ACCOUNTABILITY_COMMAND_STATUS")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.StatusCommandName = normalizeCommand(statusCommandName)
+
+	cancelCommandName, err := configutil.StringEnvRequired("ACCOUNTABILITY_COMMAND_CANCEL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.CancelCommandName = normalizeCommand(cancelCommandName)
+
+	cfg.BeeminderBaseURL, err = configutil.StringEnvRequired("BEEMINDER_API_BASE_URL")
+	if err != nil {
+		return config{}, err
+	}
+
+	cfg.BeeminderAuthToken, err = configutil.StringEnvRequired("BEEMINDER_AUTH_TOKEN")
+	if err != nil {
+		return config{}, err
+	}
+
+	cfg.BeeminderUsername, err = configutil.StringEnvRequired("BEEMINDER_USERNAME")
+	if err != nil {
+		return config{}, err
+	}
+
+	if cfg.ExpiryPollInterval <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL must be positive")
+	}
+
+	return cfg, nil
 }
 
 func warnOnKnownSpokePortCollisions(logger *log.Logger) {
-	knownAddrs := map[string]string{
-		"BEEMINDER_SPOKE_HTTP_ADDR":      getenv("BEEMINDER_SPOKE_HTTP_ADDR", "127.0.0.1:8090"),
-		"FINANCE_SPOKE_HTTP_ADDR":        getenv("FINANCE_SPOKE_HTTP_ADDR", "127.0.0.1:8091"),
-		"KALSHI_SPOKE_HTTP_ADDR":         getenv("KALSHI_SPOKE_HTTP_ADDR", "127.0.0.1:8092"),
-		"ACCOUNTABILITY_SPOKE_HTTP_ADDR": getenv("ACCOUNTABILITY_SPOKE_HTTP_ADDR", "127.0.0.1:8093"),
+	knownAddrs := map[string]string{}
+	for _, envName := range []string{
+		"BEEMINDER_SPOKE_HTTP_ADDR",
+		"FINANCE_SPOKE_HTTP_ADDR",
+		"KALSHI_SPOKE_HTTP_ADDR",
+		"ACCOUNTABILITY_SPOKE_HTTP_ADDR",
+	} {
+		if value, ok := os.LookupEnv(envName); ok {
+			knownAddrs[envName] = strings.TrimSpace(value)
+		}
 	}
 	seen := map[string]string{}
 	for envName, addr := range knownAddrs {
@@ -177,9 +231,3 @@ func warnOnKnownSpokePortCollisions(logger *log.Logger) {
 }
 
 func normalizeCommand(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
-func getenv(k, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-		return v
-	}
-	return fallback
-}
