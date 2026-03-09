@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  go-tests-and-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run Go tests with coverage
+        run: |
+          go test ./cmd/beeminder-spoke ./cmd/finance-spoke ./cmd/accountability-spoke -coverprofile=coverage.out -covermode=count
+      - name: Enforce minimum per-file coverage (changed logic files)
+        run: |
+          bash scripts/check_changed_coverage.sh coverage.out
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/kalshi-spoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust unit tests
+        run: cargo test

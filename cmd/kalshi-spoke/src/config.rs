@@ -255,3 +255,50 @@ fn normalize_severity(raw: &str) -> Result<String> {
 fn trim_trailing_slash(value: &str) -> String {
     value.trim_end_matches('/').to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_severity, parse_duration};
+    use std::time::Duration;
+
+    #[test]
+    fn parse_duration_variants() {
+        let cases = [
+            ("150ms", Duration::from_millis(150)),
+            ("15s", Duration::from_secs(15)),
+            ("2m", Duration::from_secs(120)),
+            ("3h", Duration::from_secs(10_800)),
+            ("42", Duration::from_secs(42)),
+        ];
+
+        for (raw, expected) in cases {
+            let got = parse_duration(raw).expect("duration should parse");
+            assert_eq!(got, expected, "raw={raw}");
+        }
+    }
+
+    #[test]
+    fn parse_duration_rejects_invalid_values() {
+        assert!(parse_duration("abc").is_err());
+        assert!(parse_duration("10x").is_err());
+    }
+
+    #[test]
+    fn normalize_severity_accepts_expected_values() {
+        let cases = [
+            ("info", "info"),
+            (" WARNING ", "warning"),
+            ("Critical", "critical"),
+        ];
+
+        for (raw, expected) in cases {
+            let got = normalize_severity(raw).expect("severity should normalize");
+            assert_eq!(got, expected, "raw={raw}");
+        }
+    }
+
+    #[test]
+    fn normalize_severity_rejects_unknown_values() {
+        assert!(normalize_severity("urgent").is_err());
+    }
+}

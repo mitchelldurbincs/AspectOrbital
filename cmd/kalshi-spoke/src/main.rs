@@ -16,7 +16,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use state::{PersistedState, StateStore};
-use tokio::{net::TcpListener, sync::{watch, Mutex}, time::sleep};
+use tokio::{
+    net::TcpListener,
+    sync::{watch, Mutex},
+    time::sleep,
+};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
@@ -86,6 +90,32 @@ struct WsErrorMessage {
 struct SellOutcome {
     summary: String,
     client_order_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThresholdTransition {
+    Initialize,
+    Trigger,
+    Rearm,
+    Noop,
+}
+
+fn evaluate_threshold_transition(
+    has_market: bool,
+    was_above_threshold: bool,
+    is_above: bool,
+) -> ThresholdTransition {
+    if !has_market {
+        return ThresholdTransition::Initialize;
+    }
+    if !was_above_threshold && is_above {
+        return ThresholdTransition::Trigger;
+    }
+    if was_above_threshold && !is_above {
+        return ThresholdTransition::Rearm;
+    }
+
+    ThresholdTransition::Noop
 }
 
 impl Default for RuntimeSnapshot {
@@ -476,7 +506,9 @@ async fn handle_ws_text(
                 .msg
                 .msg
                 .unwrap_or_else(|| "unknown websocket error".to_string());
-            runtime.record_ws_error(format!("code={} msg={}", code, message)).await;
+            runtime
+                .record_ws_error(format!("code={} msg={}", code, message))
+                .await;
             warn!("kalshi websocket returned error code {}: {}", code, message);
         }
         _ => {}
@@ -501,75 +533,110 @@ async fn process_ticker_update(
     };
 
     let yes_bid_str = format_decimal_4(yes_bid);
-    runtime.record_ticker_price(market_ticker, yes_bid_str.clone()).await;
+    runtime
+        .record_ticker_price(market_ticker, yes_bid_str.clone())
+        .await;
 
     let is_above = yes_bid >= config.trigger_yes_bid_dollars;
-    if !persisted.has_market(market_ticker).await {
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = is_above;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_action = Some("initialized market state".to_string());
-        }).await?;
-        info!(
-            "initialized state for {} at yes_bid={} (above_threshold={})",
-            market_ticker, yes_bid_str, is_above
-        );
-        return Ok(());
-    }
-
-    let previous = persisted.market_snapshot(market_ticker).await;
-
-    if !previous.was_above_threshold && is_above {
-        let threshold = config.trigger_threshold_string();
-        let trigger_message = format!(
-            "[trigger] {} YES bid {} crossed above {}",
-            market_ticker, yes_bid_str, threshold
-        );
-        info!("{}", trigger_message);
-        if let Err(err) = discord.notify(&trigger_message, Some("info")).await {
-            warn!("failed to deliver trigger alert to discord-hub: {err:#}");
+    let has_market = persisted.has_market(market_ticker).await;
+    let previous = if has_market {
+        persisted.market_snapshot(market_ticker).await
+    } else {
+        Default::default()
+    };
+    match evaluate_threshold_transition(has_market, previous.was_above_threshold, is_above) {
+        ThresholdTransition::Initialize => {
+            persisted
+                .update_market(market_ticker, |state| {
+                    state.was_above_threshold = is_above;
+                    state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                    state.last_action = Some("initialized market state".to_string());
+                })
+                .await?;
+            info!(
+                "initialized state for {} at yes_bid={} (above_threshold={})",
+                market_ticker, yes_bid_str, is_above
+            );
+            return Ok(());
         }
-
-        let mut client_order_id = previous.last_client_order_id.clone();
-        let action_summary = if config.auto_sell_enabled {
-            let outcome = attempt_sell(config, kalshi, discord, market_ticker).await?;
-            if outcome.client_order_id.is_some() {
-                client_order_id = outcome.client_order_id;
+        ThresholdTransition::Trigger => {
+            let threshold = config.trigger_threshold_string();
+            let trigger_message = format!(
+                "[trigger] {} YES bid {} crossed above {}",
+                market_ticker, yes_bid_str, threshold
+            );
+            info!("{}", trigger_message);
+            if let Err(err) = discord.notify(&trigger_message, Some("info")).await {
+                warn!("failed to deliver trigger alert to discord-hub: {err:#}");
             }
-            outcome.summary
-        } else {
-            "trigger fired (auto-sell disabled)".to_string()
-        };
 
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = true;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_triggered_at = Some(Utc::now());
-            state.last_client_order_id = client_order_id.clone();
-            state.last_action = Some(action_summary.clone());
-        }).await?;
-        return Ok(());
-    }
+            let mut client_order_id = previous.last_client_order_id.clone();
+            let action_summary = if config.auto_sell_enabled {
+                let outcome = attempt_sell(config, kalshi, discord, market_ticker).await?;
+                if outcome.client_order_id.is_some() {
+                    client_order_id = outcome.client_order_id;
+                }
+                outcome.summary
+            } else {
+                "trigger fired (auto-sell disabled)".to_string()
+            };
 
-    if previous.was_above_threshold && !is_above {
-        let threshold = config.trigger_threshold_string();
-        let rearmed_message = format!(
-            "[re-armed] {} YES bid {} dropped below {}",
-            market_ticker, yes_bid_str, threshold
-        );
-        info!("{}", rearmed_message);
-        if let Err(err) = discord.notify(&rearmed_message, Some("info")).await {
-            warn!("failed to deliver re-armed alert to discord-hub: {err:#}");
+            persisted
+                .update_market(market_ticker, |state| {
+                    state.was_above_threshold = true;
+                    state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                    state.last_triggered_at = Some(Utc::now());
+                    state.last_client_order_id = client_order_id.clone();
+                    state.last_action = Some(action_summary.clone());
+                })
+                .await?;
+            return Ok(());
         }
+        ThresholdTransition::Rearm => {
+            let threshold = config.trigger_threshold_string();
+            let rearmed_message = format!(
+                "[re-armed] {} YES bid {} dropped below {}",
+                market_ticker, yes_bid_str, threshold
+            );
+            info!("{}", rearmed_message);
+            if let Err(err) = discord.notify(&rearmed_message, Some("info")).await {
+                warn!("failed to deliver re-armed alert to discord-hub: {err:#}");
+            }
 
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = false;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_action = Some("trigger re-armed".to_string());
-        }).await?;
+            persisted
+                .update_market(market_ticker, |state| {
+                    state.was_above_threshold = false;
+                    state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                    state.last_action = Some("trigger re-armed".to_string());
+                })
+                .await?;
+        }
+        ThresholdTransition::Noop => {}
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{evaluate_threshold_transition, ThresholdTransition};
+
+    #[test]
+    fn threshold_transition_logic() {
+        let cases = [
+            (false, false, false, ThresholdTransition::Initialize),
+            (false, true, true, ThresholdTransition::Initialize),
+            (true, false, true, ThresholdTransition::Trigger),
+            (true, true, false, ThresholdTransition::Rearm),
+            (true, true, true, ThresholdTransition::Noop),
+            (true, false, false, ThresholdTransition::Noop),
+        ];
+
+        for (has_market, was_above, is_above, expected) in cases {
+            let got = evaluate_threshold_transition(has_market, was_above, is_above);
+            assert_eq!(got, expected);
+        }
+    }
 }
 
 async fn attempt_sell(
