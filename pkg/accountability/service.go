@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"personal-infrastructure/pkg/beeminder"
 )
 
 type Status string
@@ -43,7 +41,14 @@ type AttachmentMetadata struct {
 }
 
 type BeeminderWriter interface {
-	CreateDatapoint(context.Context, beeminder.DatapointRequest) error
+	CreateDatapoint(context.Context, Datapoint) error
+}
+
+type Datapoint struct {
+	GoalSlug string
+	Value    float64
+	Comment  string
+	Time     time.Time
 }
 
 type Service struct {
@@ -188,7 +193,7 @@ func (s *Service) writeBeeminder(ctx context.Context, goal string, value float64
 	if s.beeminderClient == nil {
 		return nil
 	}
-	return s.beeminderClient.CreateDatapoint(ctx, beeminder.DatapointRequest{GoalSlug: goal, Value: value, Comment: comment, Time: s.now()})
+	return s.beeminderClient.CreateDatapoint(ctx, Datapoint{GoalSlug: goal, Value: value, Comment: comment, Time: s.now()})
 }
 
 func sqliteExec(dbPath, sqlText string) ([]map[string]any, error) {

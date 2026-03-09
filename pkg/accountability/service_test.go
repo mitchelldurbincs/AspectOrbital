@@ -6,13 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"personal-infrastructure/pkg/beeminder"
 )
 
-type fakeBeeminder struct{ calls []beeminder.DatapointRequest }
+type fakeBeeminder struct{ calls []Datapoint }
 
-func (f *fakeBeeminder) CreateDatapoint(_ context.Context, req beeminder.DatapointRequest) error {
+func (f *fakeBeeminder) CreateDatapoint(_ context.Context, req Datapoint) error {
 	f.calls = append(f.calls, req)
 	return nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -24,11 +23,12 @@ const (
 )
 
 func main() {
+	cfg := loadConfig()
 	logger := log.New(os.Stdout, "accountability-spoke ", log.LstdFlags|log.Lmicroseconds)
 	warnOnKnownSpokePortCollisions(logger)
 
 	if err := accountability.Bootstrap(context.Background(), cfg.DBPath); err != nil {
-		return fmt.Errorf("bootstrap db: %w", err)
+		logger.Fatalf("bootstrap db: %v", err)
 	}
 
 	var bee *beeminder.Client
@@ -39,7 +39,11 @@ func main() {
 			beeminder.WithUsername(cfg.BeeminderUsername),
 		)
 	}
-	service := accountability.NewService(cfg.DBPath, bee, cfg.ExpiryPollInterval)
+	var beeminderWriter accountability.BeeminderWriter
+	if bee != nil {
+		beeminderWriter = beeminderClientAdapter{client: bee}
+	}
+	service := accountability.NewService(cfg.DBPath, beeminderWriter, cfg.ExpiryPollInterval)
 
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	defer loopCancel()
@@ -78,7 +82,26 @@ func main() {
 		logger.Printf("control API shutdown error: %v", err)
 	}
 	logger.Println("accountability-spoke stopped")
-	return exitErr
+	if exitErr != nil {
+		logger.Printf("exit error: %v", exitErr)
+		os.Exit(1)
+	}
+}
+
+type beeminderClientAdapter struct {
+	client *beeminder.Client
+}
+
+func (a beeminderClientAdapter) CreateDatapoint(ctx context.Context, datapoint accountability.Datapoint) error {
+	if a.client == nil {
+		return nil
+	}
+	return a.client.CreateDatapoint(ctx, beeminder.DatapointRequest{
+		GoalSlug: datapoint.GoalSlug,
+		Value:    datapoint.Value,
+		Comment:  datapoint.Comment,
+		Time:     datapoint.Time,
+	})
 }
 
 type config struct {
