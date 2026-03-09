@@ -18,7 +18,7 @@ type config struct {
 	BeeminderBaseURL   string
 	BeeminderAuthToken string
 	BeeminderUsername  string
-	BeeminderGoalSlug  string
+	BeeminderGoalSlugs []string
 
 	HubNotifyURL        string
 	HubNotifyAuthToken  string
@@ -29,14 +29,22 @@ type config struct {
 	ReminderInterval    time.Duration
 	ReminderStartHour   int
 	ReminderStartMinute int
+	ReminderSchedule    []reminderScheduleStep
+	HasBedtime          bool
+	BedtimeHour         int
+	BedtimeMinute       int
 
-	ActiveGrace   time.Duration
-	StartedSnooze time.Duration
-	DefaultSnooze time.Duration
+	ActiveGrace      time.Duration
+	StartedSnooze    time.Duration
+	DefaultSnooze    time.Duration
+	MaxSnooze        time.Duration
+	RequireDailyRate bool
 
 	HTTPTimeout       time.Duration
 	DatapointsPerPage int
 	MaxDatapointPages int
+
+	ActionURLs map[string]string
 
 	Commands controlCommands
 }
@@ -46,6 +54,11 @@ type controlCommands struct {
 	Snooze  string
 	Resume  string
 	Status  string
+}
+
+type reminderScheduleStep struct {
+	StartMinuteOfDay int
+	Interval         time.Duration
 }
 
 func (c controlCommands) All() []string {
@@ -85,7 +98,18 @@ func loadConfig() (config, error) {
 	cfg.BeeminderBaseURL = strings.TrimRight(cfg.BeeminderBaseURL, "/")
 	cfg.BeeminderAuthToken = strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN"))
 	cfg.BeeminderUsername = strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME"))
-	cfg.BeeminderGoalSlug = strings.TrimSpace(os.Getenv("BEEMINDER_GOAL_SLUG"))
+	goalSlugsValue, err := configutil.StringEnvRequired("BEEMINDER_GOAL_SLUGS")
+	if err != nil {
+		legacySlug := strings.TrimSpace(os.Getenv("BEEMINDER_GOAL_SLUG"))
+		if legacySlug == "" {
+			return config{}, err
+		}
+		goalSlugsValue = legacySlug
+	}
+	cfg.BeeminderGoalSlugs, err = parseGoalSlugs(goalSlugsValue)
+	if err != nil {
+		return config{}, fmt.Errorf("invalid BEEMINDER_GOAL_SLUGS: %w", err)
+	}
 
 	cfg.HubNotifyURL, err = configutil.StringEnvRequired("DISCORD_HUB_NOTIFY_URL")
 	if err != nil {
@@ -118,6 +142,14 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
+	reminderScheduleRaw := strings.TrimSpace(os.Getenv("BEEMINDER_REMINDER_SCHEDULE"))
+	if reminderScheduleRaw != "" {
+		cfg.ReminderSchedule, err = parseReminderSchedule(reminderScheduleRaw)
+		if err != nil {
+			return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_SCHEDULE: %w", err)
+		}
+	}
+
 	reminderStart, err := configutil.StringEnvRequired("BEEMINDER_REMINDER_START")
 	if err != nil {
 		return config{}, err
@@ -142,6 +174,25 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
+	cfg.MaxSnooze, err = configutil.DurationEnv("BEEMINDER_MAX_SNOOZE", 2*time.Hour)
+	if err != nil {
+		return config{}, err
+	}
+
+	cfg.RequireDailyRate, err = configutil.BoolEnvWithDefaultStrict("BEEMINDER_REQUIRE_DAILY_RATE", true)
+	if err != nil {
+		return config{}, err
+	}
+
+	bedtimeRaw := strings.TrimSpace(os.Getenv("BEEMINDER_BEDTIME"))
+	if bedtimeRaw != "" {
+		cfg.BedtimeHour, cfg.BedtimeMinute, err = configutil.ParseClockHHMM(bedtimeRaw)
+		if err != nil {
+			return config{}, fmt.Errorf("invalid BEEMINDER_BEDTIME: %w", err)
+		}
+		cfg.HasBedtime = true
+	}
+
 	cfg.HTTPTimeout, err = configutil.DurationEnvRequired("BEEMINDER_HTTP_TIMEOUT")
 	if err != nil {
 		return config{}, err
@@ -155,6 +206,12 @@ func loadConfig() (config, error) {
 	cfg.MaxDatapointPages, err = configutil.IntEnvRequired("BEEMINDER_MAX_DATAPOINT_PAGES")
 	if err != nil {
 		return config{}, err
+	}
+
+	actionURLsRaw := strings.TrimSpace(os.Getenv("BEEMINDER_ACTION_URLS"))
+	cfg.ActionURLs, err = parseActionURLs(actionURLsRaw)
+	if err != nil {
+		return config{}, fmt.Errorf("invalid BEEMINDER_ACTION_URLS: %w", err)
 	}
 
 	cfg.Commands = controlCommands{
@@ -180,8 +237,8 @@ func validateConfig(cfg config) error {
 	if cfg.BeeminderUsername == "" {
 		missing = append(missing, "BEEMINDER_USERNAME")
 	}
-	if cfg.BeeminderGoalSlug == "" {
-		missing = append(missing, "BEEMINDER_GOAL_SLUG")
+	if len(cfg.BeeminderGoalSlugs) == 0 {
+		missing = append(missing, "BEEMINDER_GOAL_SLUGS")
 	}
 	if cfg.HubNotifyURL == "" {
 		missing = append(missing, "DISCORD_HUB_NOTIFY_URL")
@@ -212,6 +269,9 @@ func validateConfig(cfg config) error {
 	if cfg.DefaultSnooze <= 0 {
 		return errors.New("BEEMINDER_DEFAULT_SNOOZE must be positive")
 	}
+	if cfg.MaxSnooze < 0 {
+		return errors.New("BEEMINDER_MAX_SNOOZE cannot be negative")
+	}
 	if cfg.HTTPTimeout <= 0 {
 		return errors.New("BEEMINDER_HTTP_TIMEOUT must be positive")
 	}
@@ -220,6 +280,12 @@ func validateConfig(cfg config) error {
 	}
 	if cfg.MaxDatapointPages <= 0 {
 		return errors.New("BEEMINDER_MAX_DATAPOINT_PAGES must be positive")
+	}
+
+	for _, step := range cfg.ReminderSchedule {
+		if step.Interval <= 0 {
+			return errors.New("BEEMINDER_REMINDER_SCHEDULE intervals must be positive")
+		}
 	}
 
 	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
@@ -238,6 +304,120 @@ func validateConfig(cfg config) error {
 	}
 
 	return nil
+}
+
+func parseGoalSlugs(raw string) ([]string, error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) == 0 {
+		return nil, errors.New("must provide at least one goal slug")
+	}
+
+	seen := make(map[string]struct{}, len(parts))
+	slugs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		slug := strings.TrimSpace(part)
+		if slug == "" {
+			continue
+		}
+
+		if _, exists := seen[slug]; exists {
+			continue
+		}
+		seen[slug] = struct{}{}
+		slugs = append(slugs, slug)
+	}
+
+	if len(slugs) == 0 {
+		return nil, errors.New("must provide at least one non-empty goal slug")
+	}
+
+	return slugs, nil
+}
+
+func parseReminderSchedule(raw string) ([]reminderScheduleStep, error) {
+	parts := strings.Split(raw, ",")
+	steps := make([]reminderScheduleStep, 0, len(parts))
+
+	for _, part := range parts {
+		entry := strings.TrimSpace(part)
+		if entry == "" {
+			continue
+		}
+
+		segments := strings.SplitN(entry, "=", 2)
+		if len(segments) != 2 {
+			return nil, fmt.Errorf("invalid schedule entry %q; expected HH:MM=duration", entry)
+		}
+
+		hour, minute, err := configutil.ParseClockHHMM(strings.TrimSpace(segments[0]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid schedule time %q: %w", segments[0], err)
+		}
+
+		interval, err := time.ParseDuration(strings.TrimSpace(segments[1]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid schedule duration %q: %w", segments[1], err)
+		}
+
+		steps = append(steps, reminderScheduleStep{
+			StartMinuteOfDay: hour*60 + minute,
+			Interval:         interval,
+		})
+	}
+
+	sort.Slice(steps, func(i, j int) bool {
+		return steps[i].StartMinuteOfDay < steps[j].StartMinuteOfDay
+	})
+
+	if len(steps) == 0 {
+		return nil, errors.New("must include at least one schedule entry")
+	}
+
+	for i := 1; i < len(steps); i++ {
+		if steps[i-1].StartMinuteOfDay == steps[i].StartMinuteOfDay {
+			return nil, fmt.Errorf("duplicate schedule start time at minute %d", steps[i].StartMinuteOfDay)
+		}
+	}
+
+	return steps, nil
+}
+
+func parseActionURLs(raw string) (map[string]string, error) {
+	if raw == "" {
+		return map[string]string{}, nil
+	}
+
+	result := make(map[string]string)
+	entries := strings.Split(raw, ",")
+	for _, entry := range entries {
+		item := strings.TrimSpace(entry)
+		if item == "" {
+			continue
+		}
+
+		segments := strings.SplitN(item, "=", 2)
+		if len(segments) != 2 {
+			return nil, fmt.Errorf("invalid action URL entry %q; expected goal=url", item)
+		}
+
+		slug := strings.TrimSpace(segments[0])
+		if slug == "" {
+			return nil, fmt.Errorf("invalid action URL entry %q; goal slug is empty", item)
+		}
+
+		urlValue := strings.TrimSpace(segments[1])
+		if urlValue == "" {
+			return nil, fmt.Errorf("invalid action URL entry %q; URL is empty", item)
+		}
+
+		if !strings.HasPrefix(urlValue, "http://") && !strings.HasPrefix(urlValue, "https://") {
+			return nil, fmt.Errorf("invalid action URL entry %q; URL must start with http:// or https://", item)
+		}
+
+		result[slug] = urlValue
+	}
+
+	return result, nil
 }
 
 func isValidSlashCommandName(value string) bool {

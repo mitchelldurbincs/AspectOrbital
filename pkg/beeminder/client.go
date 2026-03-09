@@ -128,6 +128,8 @@ type Goal struct {
 	Deadline int      `json:"deadline"`
 	GUnits   string   `json:"gunits"`
 	AggDay   string   `json:"aggday"`
+	Delta    *float64 `json:"delta"`
+	SafeBuf  *float64 `json:"safebuf"`
 }
 
 type Datapoint struct {

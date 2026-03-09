@@ -43,6 +43,31 @@ func dailyTargetForGoal(goal beeminder.Goal) (float64, error) {
 	}
 }
 
+func requiredProgressForGoal(goal beeminder.Goal, requireDailyRate bool) (float64, error) {
+	roadDue := 0.0
+	if goal.Delta != nil && *goal.Delta > 0 {
+		roadDue = *goal.Delta
+	}
+
+	if !requireDailyRate {
+		return roadDue, nil
+	}
+
+	dailyRate, err := dailyTargetForGoal(goal)
+	if err != nil {
+		if goal.Delta != nil {
+			return roadDue, nil
+		}
+		return 0, err
+	}
+
+	if dailyRate > roadDue {
+		return dailyRate, nil
+	}
+
+	return roadDue, nil
+}
+
 func aggregateDayProgress(datapoints []beeminder.Datapoint, aggDay string) float64 {
 	clean := make([]beeminder.Datapoint, 0, len(datapoints))
 	for _, datapoint := range datapoints {
@@ -101,7 +126,7 @@ func reminderStartForDay(now time.Time, hour, minute int) time.Time {
 }
 
 func renderReminderMessage(snapshot dailySnapshot) string {
-	remaining := snapshot.DailyTarget - snapshot.TodayProgress
+	remaining := snapshot.RequiredProgress - snapshot.TodayProgress
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -120,7 +145,7 @@ func renderReminderMessage(snapshot dailySnapshot) string {
 		"%s reminder: %.2f/%.2f %s done today (%.2f left).",
 		goalLabel,
 		snapshot.TodayProgress,
-		snapshot.DailyTarget,
+		snapshot.RequiredProgress,
 		units,
 		remaining,
 	)
@@ -130,13 +155,17 @@ func renderReminderMessage(snapshot dailySnapshot) string {
 			"%s reminder: %.1f/%.1f minutes done today (%.1f min left).",
 			goalLabel,
 			snapshot.TodayProgress*60,
-			snapshot.DailyTarget*60,
+			snapshot.RequiredProgress*60,
 			remaining*60,
 		)
 	}
 
 	if snapshot.ReminderWindow > 0 {
 		base += fmt.Sprintf(" I will ping again in %s.", humanDuration(snapshot.ReminderWindow))
+	}
+
+	if strings.TrimSpace(snapshot.ActionURL) != "" {
+		base += fmt.Sprintf(" Start now: %s", snapshot.ActionURL)
 	}
 
 	return base

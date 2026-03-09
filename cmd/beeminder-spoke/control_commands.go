@@ -30,17 +30,23 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 	case a.cfg.Commands.Snooze:
 		durationInput := request.optionString(snoozeDurationOptionName)
 
-		duration, err := parseSnoozeArgument(durationInput, a.cfg.DefaultSnooze)
+		duration, capped, err := parseSnoozeArgument(durationInput, a.cfg.DefaultSnooze, a.cfg.MaxSnooze)
 		if err != nil {
 			return nil, http.StatusBadRequest, err
 		}
 
 		until := a.engine.Snooze(now, duration)
+		message := fmt.Sprintf("Snoozed reminders for %s (until %s).", duration, formatClockInLocation(until, a.location))
+		if capped {
+			message = fmt.Sprintf("Snoozed reminders for %s (until %s, capped by policy).", duration, formatClockInLocation(until, a.location))
+		}
+
 		return map[string]any{
 			"status":       "ok",
 			"command":      a.cfg.Commands.Snooze,
-			"message":      fmt.Sprintf("Snoozed reminders for %s (until %s).", duration, formatClockInLocation(until, a.location)),
+			"message":      message,
 			"duration":     duration.String(),
+			"capped":       capped,
 			"snoozedUntil": until,
 		}, http.StatusOK, nil
 	case a.cfg.Commands.Resume:
@@ -97,19 +103,32 @@ func (c commandRequest) optionString(name string) string {
 	}
 }
 
-func parseSnoozeArgument(raw string, fallback time.Duration) (time.Duration, error) {
+func parseSnoozeArgument(raw string, fallback, max time.Duration) (time.Duration, bool, error) {
 	value := strings.TrimSpace(raw)
+	capped := false
+
 	if value == "" {
-		return fallback, nil
+		duration := fallback
+		if max > 0 && duration > max {
+			duration = max
+			capped = true
+		}
+
+		return duration, capped, nil
 	}
 
 	duration, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid duration %q; try values like 15m or 1h", value)
+		return 0, false, fmt.Errorf("invalid duration %q; try values like 15m or 1h", value)
 	}
 	if duration <= 0 {
-		return 0, errors.New("snooze duration must be positive")
+		return 0, false, errors.New("snooze duration must be positive")
 	}
 
-	return duration, nil
+	if max > 0 && duration > max {
+		duration = max
+		capped = true
+	}
+
+	return duration, capped, nil
 }

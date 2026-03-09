@@ -2,26 +2,47 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 func summarizeStatus(status reminderStatus, location *time.Location) string {
+	if len(status.Goals) == 0 {
+		return "No goals configured."
+	}
+
+	goalSlugs := make([]string, 0, len(status.Goals))
+	for goalSlug := range status.Goals {
+		goalSlugs = append(goalSlugs, goalSlug)
+	}
+	sort.Strings(goalSlugs)
+
+	parts := make([]string, 0, len(goalSlugs))
+	for _, goalSlug := range goalSlugs {
+		goalStatus := status.Goals[goalSlug]
+		parts = append(parts, summarizeGoalStatus(goalSlug, goalStatus, location))
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+func summarizeGoalStatus(goalSlug string, status goalReminderStatus, location *time.Location) string {
 	if status.Completed {
-		return "Goal complete for today. No reminders are active."
+		return fmt.Sprintf("%s: complete", goalSlug)
 	}
 
 	if status.LastSnapshot == nil {
 		if status.SnoozedUntil != nil {
-			return fmt.Sprintf("No snapshot yet. Reminders are snoozed until %s.", formatClockInLocation(*status.SnoozedUntil, location))
+			return fmt.Sprintf("%s: waiting (snoozed until %s)", goalSlug, formatClockInLocation(*status.SnoozedUntil, location))
 		}
 
-		return "No Beeminder snapshot yet."
+		return fmt.Sprintf("%s: waiting for first snapshot", goalSlug)
 	}
 
 	done := status.LastSnapshot.TodayProgress
-	target := status.LastSnapshot.DailyTarget
+	target := status.LastSnapshot.RequiredProgress
 	remaining := target - done
 	if remaining < 0 {
 		remaining = 0
@@ -41,7 +62,8 @@ func summarizeStatus(status reminderStatus, location *time.Location) string {
 	}
 
 	message := fmt.Sprintf(
-		"Today: %s/%s %s, %s %s left.",
+		"%s: %s/%s %s done, %s %s left",
+		goalSlug,
 		formatFloat(done, decimals),
 		formatFloat(target, decimals),
 		unit,
@@ -51,13 +73,13 @@ func summarizeStatus(status reminderStatus, location *time.Location) string {
 
 	nextPingAt := resolveNextPingTime(status)
 	if !nextPingAt.IsZero() {
-		message += fmt.Sprintf(" Next ping: %s.", formatClockInLocation(nextPingAt, location))
+		message += fmt.Sprintf(" (next ping %s)", formatClockInLocation(nextPingAt, location))
 	}
 
 	return message
 }
 
-func resolveNextPingTime(status reminderStatus) time.Time {
+func resolveNextPingTime(status goalReminderStatus) time.Time {
 	if status.SnoozedUntil != nil {
 		return *status.SnoozedUntil
 	}

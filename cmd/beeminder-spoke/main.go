@@ -110,7 +110,7 @@ func run(logger *log.Logger) error {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signalCh)
 
-	logger.Printf("tracking Beeminder goal %q for user %q", cfg.BeeminderGoalSlug, cfg.BeeminderUsername)
+	logger.Printf("tracking Beeminder goals %v for user %q", cfg.BeeminderGoalSlugs, cfg.BeeminderUsername)
 
 	exitErr := lifecycle.WaitForExit(signalCh, httpErrCh, ticker.C, func() {
 		if err := app.runCycle(context.Background()); err != nil {

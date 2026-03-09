@@ -8,17 +8,23 @@ import (
 const progressEpsilon = 1e-9
 
 type dailySnapshot struct {
-	CheckedAt      time.Time     `json:"checkedAt"`
-	LocalNow       time.Time     `json:"localNow"`
-	GoalSlug       string        `json:"goalSlug"`
-	GoalTitle      string        `json:"goalTitle"`
-	GoalUnits      string        `json:"goalUnits"`
-	GoalAggDay     string        `json:"goalAggDay"`
-	Daystamp       string        `json:"daystamp"`
-	DailyTarget    float64       `json:"dailyTarget"`
-	TodayProgress  float64       `json:"todayProgress"`
-	ReminderStart  time.Time     `json:"reminderStart"`
-	ReminderWindow time.Duration `json:"reminderWindow"`
+	CheckedAt         time.Time     `json:"checkedAt"`
+	LocalNow          time.Time     `json:"localNow"`
+	GoalSlug          string        `json:"goalSlug"`
+	GoalTitle         string        `json:"goalTitle"`
+	GoalUnits         string        `json:"goalUnits"`
+	GoalAggDay        string        `json:"goalAggDay"`
+	Daystamp          string        `json:"daystamp"`
+	RequiredProgress  float64       `json:"requiredProgress"`
+	RoadDue           float64       `json:"roadDue"`
+	SafeBufferDays    float64       `json:"safeBufferDays"`
+	TodayProgress     float64       `json:"todayProgress"`
+	ReminderStart     time.Time     `json:"reminderStart"`
+	ReminderWindow    time.Duration `json:"reminderWindow"`
+	ActionURL         string        `json:"actionUrl,omitempty"`
+	RequireDailyRate  bool          `json:"requireDailyRate"`
+	HasBedtime        bool          `json:"hasBedtime"`
+	ConfiguredBedtime string        `json:"configuredBedtime,omitempty"`
 }
 
 type reminderState struct {
@@ -33,70 +39,81 @@ type reminderState struct {
 }
 
 type reminderEngine struct {
-	mu           sync.Mutex
-	cfg          config
-	state        reminderState
-	hasSnapshot  bool
-	lastSnapshot dailySnapshot
+	mu            sync.Mutex
+	cfg           config
+	states        map[string]*reminderState
+	hasSnapshot   map[string]bool
+	lastSnapshots map[string]dailySnapshot
 }
 
 func newReminderEngine(cfg config) *reminderEngine {
-	return &reminderEngine{cfg: cfg}
+	return &reminderEngine{
+		cfg:           cfg,
+		states:        make(map[string]*reminderState),
+		hasSnapshot:   make(map[string]bool),
+		lastSnapshots: make(map[string]dailySnapshot),
+	}
 }
 
-func (e *reminderEngine) Evaluate(snapshot dailySnapshot) bool {
+func (e *reminderEngine) Evaluate(goalSlug string, snapshot dailySnapshot) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.hasSnapshot = true
-	e.lastSnapshot = snapshot
+	state := e.stateForGoal(goalSlug)
+	e.hasSnapshot[goalSlug] = true
+	e.lastSnapshots[goalSlug] = snapshot
 
-	if e.state.Daystamp != snapshot.Daystamp {
-		e.state = reminderState{
+	if state.Daystamp != snapshot.Daystamp {
+		*state = reminderState{
 			Daystamp:     snapshot.Daystamp,
 			LastProgress: snapshot.TodayProgress,
 		}
 	}
 
-	if snapshot.TodayProgress > e.state.LastProgress+progressEpsilon {
-		e.state.ActiveUntil = snapshot.CheckedAt.Add(e.cfg.ActiveGrace)
+	if snapshot.TodayProgress > state.LastProgress+progressEpsilon {
+		state.ActiveUntil = snapshot.CheckedAt.Add(e.cfg.ActiveGrace)
 	}
-	e.state.LastProgress = snapshot.TodayProgress
+	state.LastProgress = snapshot.TodayProgress
 
-	if snapshot.TodayProgress >= snapshot.DailyTarget-progressEpsilon {
-		e.state.Completed = true
-		e.state.NextReminderAt = time.Time{}
+	if snapshot.RequiredProgress <= progressEpsilon || snapshot.TodayProgress >= snapshot.RequiredProgress-progressEpsilon {
+		state.Completed = true
+		state.NextReminderAt = time.Time{}
 		return false
 	}
 
-	e.state.Completed = false
+	state.Completed = false
 
 	if snapshot.CheckedAt.Before(snapshot.ReminderStart) {
 		return false
 	}
 
-	if !e.state.SnoozedUntil.IsZero() && snapshot.CheckedAt.Before(e.state.SnoozedUntil) {
+	if e.cfg.HasBedtime && isAtOrAfterBedtime(snapshot.LocalNow, e.cfg.BedtimeHour, e.cfg.BedtimeMinute) {
 		return false
 	}
 
-	if !e.state.ActiveUntil.IsZero() && snapshot.CheckedAt.Before(e.state.ActiveUntil) {
+	if !state.SnoozedUntil.IsZero() && snapshot.CheckedAt.Before(state.SnoozedUntil) {
 		return false
 	}
 
-	if e.state.NextReminderAt.IsZero() {
+	if !state.ActiveUntil.IsZero() && snapshot.CheckedAt.Before(state.ActiveUntil) {
+		return false
+	}
+
+	if state.NextReminderAt.IsZero() {
 		return true
 	}
 
-	return !snapshot.CheckedAt.Before(e.state.NextReminderAt)
+	return !snapshot.CheckedAt.Before(state.NextReminderAt)
 }
 
-func (e *reminderEngine) MarkReminderSent(now time.Time, message string) {
+func (e *reminderEngine) MarkReminderSent(goalSlug string, nowUTC, localNow time.Time, message string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.state.LastReminderAt = now
-	e.state.LastReminderMessage = message
-	e.state.NextReminderAt = now.Add(e.cfg.ReminderInterval)
+	state := e.stateForGoal(goalSlug)
+	state.LastReminderAt = nowUTC
+	state.LastReminderMessage = message
+	state.NextReminderAt = nowUTC.Add(reminderIntervalForLocalTime(localNow, e.cfg))
 }
 
 func (e *reminderEngine) Snooze(now time.Time, duration time.Duration) time.Time {
@@ -104,12 +121,15 @@ func (e *reminderEngine) Snooze(now time.Time, duration time.Duration) time.Time
 	defer e.mu.Unlock()
 
 	until := now.Add(duration)
-	if until.After(e.state.SnoozedUntil) {
-		e.state.SnoozedUntil = until
+	for _, goalSlug := range e.cfg.BeeminderGoalSlugs {
+		state := e.stateForGoal(goalSlug)
+		if until.After(state.SnoozedUntil) {
+			state.SnoozedUntil = until
+		}
+		state.NextReminderAt = state.SnoozedUntil
 	}
-	e.state.NextReminderAt = e.state.SnoozedUntil
 
-	return e.state.SnoozedUntil
+	return until
 }
 
 func (e *reminderEngine) MarkStarted(now time.Time) time.Time {
@@ -120,9 +140,12 @@ func (e *reminderEngine) Resume(now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.state.SnoozedUntil = time.Time{}
-	e.state.ActiveUntil = time.Time{}
-	e.state.NextReminderAt = now
+	for _, goalSlug := range e.cfg.BeeminderGoalSlugs {
+		state := e.stateForGoal(goalSlug)
+		state.SnoozedUntil = time.Time{}
+		state.ActiveUntil = time.Time{}
+		state.NextReminderAt = now
+	}
 }
 
 func (e *reminderEngine) Status() reminderStatus {
@@ -130,34 +153,87 @@ func (e *reminderEngine) Status() reminderStatus {
 	defer e.mu.Unlock()
 
 	status := reminderStatus{
-		Commands:            e.cfg.Commands,
-		CurrentDaystamp:     e.state.Daystamp,
-		Completed:           e.state.Completed,
-		NextReminderAt:      optionalTime(e.state.NextReminderAt),
-		SnoozedUntil:        optionalTime(e.state.SnoozedUntil),
-		ActiveUntil:         optionalTime(e.state.ActiveUntil),
-		LastReminderAt:      optionalTime(e.state.LastReminderAt),
-		LastReminderMessage: e.state.LastReminderMessage,
+		Commands: e.cfg.Commands,
+		Goals:    make(map[string]goalReminderStatus, len(e.cfg.BeeminderGoalSlugs)),
 	}
 
-	if e.hasSnapshot {
-		snapshot := e.lastSnapshot
-		status.LastSnapshot = &snapshot
+	for _, goalSlug := range e.cfg.BeeminderGoalSlugs {
+		state := e.stateForGoal(goalSlug)
+		goalStatus := goalReminderStatus{
+			CurrentDaystamp:     state.Daystamp,
+			Completed:           state.Completed,
+			NextReminderAt:      optionalTime(state.NextReminderAt),
+			SnoozedUntil:        optionalTime(state.SnoozedUntil),
+			ActiveUntil:         optionalTime(state.ActiveUntil),
+			LastReminderAt:      optionalTime(state.LastReminderAt),
+			LastReminderMessage: state.LastReminderMessage,
+		}
+
+		if e.hasSnapshot[goalSlug] {
+			snapshot := e.lastSnapshots[goalSlug]
+			goalStatus.LastSnapshot = &snapshot
+		}
+
+		status.Goals[goalSlug] = goalStatus
 	}
 
 	return status
 }
 
+func (e *reminderEngine) stateForGoal(goalSlug string) *reminderState {
+	state, ok := e.states[goalSlug]
+	if ok {
+		return state
+	}
+
+	state = &reminderState{}
+	e.states[goalSlug] = state
+	return state
+}
+
 type reminderStatus struct {
-	Commands            controlCommands `json:"commands"`
-	CurrentDaystamp     string          `json:"currentDaystamp"`
-	Completed           bool            `json:"completed"`
-	NextReminderAt      *time.Time      `json:"nextReminderAt,omitempty"`
-	SnoozedUntil        *time.Time      `json:"snoozedUntil,omitempty"`
-	ActiveUntil         *time.Time      `json:"activeUntil,omitempty"`
-	LastReminderAt      *time.Time      `json:"lastReminderAt,omitempty"`
-	LastReminderMessage string          `json:"lastReminderMessage,omitempty"`
-	LastSnapshot        *dailySnapshot  `json:"lastSnapshot,omitempty"`
+	Commands controlCommands               `json:"commands"`
+	Goals    map[string]goalReminderStatus `json:"goals"`
+}
+
+type goalReminderStatus struct {
+	CurrentDaystamp     string         `json:"currentDaystamp"`
+	Completed           bool           `json:"completed"`
+	NextReminderAt      *time.Time     `json:"nextReminderAt,omitempty"`
+	SnoozedUntil        *time.Time     `json:"snoozedUntil,omitempty"`
+	ActiveUntil         *time.Time     `json:"activeUntil,omitempty"`
+	LastReminderAt      *time.Time     `json:"lastReminderAt,omitempty"`
+	LastReminderMessage string         `json:"lastReminderMessage,omitempty"`
+	LastSnapshot        *dailySnapshot `json:"lastSnapshot,omitempty"`
+}
+
+func reminderIntervalForLocalTime(localNow time.Time, cfg config) time.Duration {
+	if len(cfg.ReminderSchedule) == 0 {
+		return cfg.ReminderInterval
+	}
+
+	minuteOfDay := localNow.Hour()*60 + localNow.Minute()
+	interval := cfg.ReminderInterval
+	for _, step := range cfg.ReminderSchedule {
+		if minuteOfDay < step.StartMinuteOfDay {
+			break
+		}
+		interval = step.Interval
+	}
+
+	return interval
+}
+
+func isAtOrAfterBedtime(localNow time.Time, bedtimeHour, bedtimeMinute int) bool {
+	if localNow.Hour() > bedtimeHour {
+		return true
+	}
+
+	if localNow.Hour() == bedtimeHour && localNow.Minute() >= bedtimeMinute {
+		return true
+	}
+
+	return false
 }
 
 func optionalTime(value time.Time) *time.Time {
