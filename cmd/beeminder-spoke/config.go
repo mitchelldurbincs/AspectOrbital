@@ -21,6 +21,7 @@ type config struct {
 	BeeminderGoalSlug  string
 
 	HubNotifyURL        string
+	HubNotifyAuthToken  string
 	NotifyTargetChannel string
 	NotifySeverity      string
 
@@ -91,6 +92,11 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	cfg.HubNotifyURL = strings.TrimSpace(cfg.HubNotifyURL)
+	cfg.HubNotifyAuthToken, err = configutil.StringEnvRequired("DISCORD_HUB_NOTIFY_AUTH_TOKEN")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.HubNotifyAuthToken = strings.TrimSpace(cfg.HubNotifyAuthToken)
 	cfg.NotifyTargetChannel, err = configutil.StringEnvRequired("BEEMINDER_NOTIFY_CHANNEL")
 	if err != nil {
 		return config{}, err
@@ -179,6 +185,9 @@ func validateConfig(cfg config) error {
 	}
 	if cfg.HubNotifyURL == "" {
 		missing = append(missing, "DISCORD_HUB_NOTIFY_URL")
+	}
+	if cfg.HubNotifyAuthToken == "" {
+		missing = append(missing, "DISCORD_HUB_NOTIFY_AUTH_TOKEN")
 	}
 	if cfg.NotifyTargetChannel == "" {
 		missing = append(missing, "BEEMINDER_NOTIFY_CHANNEL")

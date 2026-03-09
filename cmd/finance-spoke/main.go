@@ -55,7 +55,7 @@ func run(logger *log.Logger) error {
 	}
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
-	hub := hubnotify.NewClient(cfg.HubNotifyURL, httpClient)
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, cfg.HubNotifyAuthToken, httpClient)
 	plaid := newPlaidClient(cfg, httpClient)
 	stateStore, err := newStateStore(cfg.StateFilePath)
 	if err != nil {

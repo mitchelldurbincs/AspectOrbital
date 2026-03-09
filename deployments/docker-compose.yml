@@ -17,6 +17,7 @@ services:
       - ../.env
     environment:
       HUB_HTTP_ADDR: 0.0.0.0:8080
+      HUB_NOTIFY_AUTH_TOKEN: ${HUB_NOTIFY_AUTH_TOKEN}
       SPOKE_COMMAND_SERVICES: >-
         [{"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},{"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},{"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"}]
     depends_on:
@@ -38,6 +39,7 @@ services:
     environment:
       BEEMINDER_SPOKE_HTTP_ADDR: 0.0.0.0:8090
       DISCORD_HUB_NOTIFY_URL: http://discord-hub:8080/notify
+      DISCORD_HUB_NOTIFY_AUTH_TOKEN: ${HUB_NOTIFY_AUTH_TOKEN}
     ports:
       - "8090:8090"
     restart: unless-stopped
@@ -53,6 +55,7 @@ services:
     environment:
       FINANCE_SPOKE_HTTP_ADDR: 0.0.0.0:8091
       FINANCE_HUB_NOTIFY_URL: http://discord-hub:8080/notify
+      FINANCE_HUB_NOTIFY_AUTH_TOKEN: ${HUB_NOTIFY_AUTH_TOKEN}
     depends_on:
       - discord-hub
     ports:
@@ -70,6 +73,7 @@ services:
     environment:
       KALSHI_SPOKE_HTTP_ADDR: 0.0.0.0:8092
       KALSHI_HUB_NOTIFY_URL: http://discord-hub:8080/notify
+      KALSHI_HUB_NOTIFY_AUTH_TOKEN: ${HUB_NOTIFY_AUTH_TOKEN}
     depends_on:
       - discord-hub
     ports:

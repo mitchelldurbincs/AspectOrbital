@@ -11,6 +11,7 @@ func clearFinanceEnv(t *testing.T) {
 	keys := []string{
 		"FINANCE_SPOKE_HTTP_ADDR",
 		"FINANCE_HUB_NOTIFY_URL",
+		"FINANCE_HUB_NOTIFY_AUTH_TOKEN",
 		"FINANCE_NOTIFY_CHANNEL",
 		"FINANCE_NOTIFY_SEVERITY",
 		"FINANCE_SUMMARY_ENABLED",
@@ -43,6 +44,7 @@ func setFinanceRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("FINANCE_SPOKE_HTTP_ADDR", "127.0.0.1:8091")
 	t.Setenv("FINANCE_HUB_NOTIFY_URL", "http://127.0.0.1:8080/notify")
+	t.Setenv("FINANCE_HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("FINANCE_NOTIFY_CHANNEL", "finance-summary")
 	t.Setenv("FINANCE_NOTIFY_SEVERITY", "info")
 	t.Setenv("FINANCE_SUMMARY_ENABLED", "true")

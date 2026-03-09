@@ -61,7 +61,10 @@ Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
 Send alerts from local services:
 
 ```bash
+export HUB_NOTIFY_AUTH_TOKEN=replace-with-long-random-token
+
 curl -X POST http://localhost:8080/notify \
+  -H "Authorization: Bearer ${HUB_NOTIFY_AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"targetChannel":"kalshi-alerts","message":"Test alert","severity":"info"}'
 ```

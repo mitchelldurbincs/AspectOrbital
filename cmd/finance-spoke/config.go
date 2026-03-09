@@ -14,6 +14,7 @@ type config struct {
 	HTTPAddr string
 
 	HubNotifyURL        string
+	HubNotifyAuthToken  string
 	NotifyTargetChannel string
 	NotifySeverity      string
 
@@ -53,6 +54,10 @@ func loadConfig() (config, error) {
 	}
 
 	cfg.HubNotifyURL, err = configutil.StringEnvRequired("FINANCE_HUB_NOTIFY_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.HubNotifyAuthToken, err = configutil.StringEnvRequired("FINANCE_HUB_NOTIFY_AUTH_TOKEN")
 	if err != nil {
 		return config{}, err
 	}
@@ -181,6 +186,9 @@ func loadConfig() (config, error) {
 func validateConfig(cfg config) error {
 	if cfg.HubNotifyURL == "" {
 		return errors.New("FINANCE_HUB_NOTIFY_URL is required")
+	}
+	if cfg.HubNotifyAuthToken == "" {
+		return errors.New("FINANCE_HUB_NOTIFY_AUTH_TOKEN is required")
 	}
 	if cfg.NotifyTargetChannel == "" {
 		return errors.New("FINANCE_NOTIFY_CHANNEL is required")

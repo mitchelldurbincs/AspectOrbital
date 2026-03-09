@@ -8,12 +8,16 @@ import (
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
+
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 )
+
+const testDiscordResponseCharacterLimit = 1900
 
 func TestParseSpokeCommandCatalogSupportsModernPayload(t *testing.T) {
 	body := []byte(`{"version":1,"service":"beeminder-spoke","commands":[{"name":"status","description":"Show status"}]}`)
 
-	commands, err := parseSpokeCommandCatalog(body)
+	commands, err := spokebridge.ParseCommandCatalog(body)
 	if err != nil {
 		t.Fatalf("parseSpokeCommandCatalog returned error: %v", err)
 	}
@@ -23,27 +27,27 @@ func TestParseSpokeCommandCatalogSupportsModernPayload(t *testing.T) {
 }
 
 func TestParseSpokeCommandCatalogRejectsUnrecognizedPayload(t *testing.T) {
-	_, err := parseSpokeCommandCatalog([]byte(`{"commands":[]}`))
+	_, err := spokebridge.ParseCommandCatalog([]byte(`{"commands":[]}`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
 func TestParseSpokeCommandCatalogRejectsLegacyPayload(t *testing.T) {
-	_, err := parseSpokeCommandCatalog([]byte(`{"commands":["started","snooze"]}`))
+	_, err := spokebridge.ParseCommandCatalog([]byte(`{"commands":["started","snooze"]}`))
 	if err == nil {
 		t.Fatal("expected error for legacy command payload")
 	}
 }
 
 func TestNormalizeSpokeCommandSpecsFiltersDedupesAndSkipsPing(t *testing.T) {
-	input := []spokeCommandSpec{
+	input := []spokebridge.CommandSpec{
 		{Name: "", Description: "empty"},
 		{Name: pingCommandName, Description: "reserved"},
 		{
 			Name:        " STATUS ",
 			Description: "",
-			Options: []spokeCommandOptionSpec{
+			Options: []spokebridge.CommandOptionSpec{
 				{Name: "Argument", Type: " string ", Description: "", Required: false},
 				{Name: "Argument", Type: "int", Description: "duplicate", Required: true},
 				{Name: "bad name", Type: "bool", Description: "invalid"},
@@ -54,7 +58,7 @@ func TestNormalizeSpokeCommandSpecsFiltersDedupesAndSkipsPing(t *testing.T) {
 		{Name: "resume", Description: "Resume reminders"},
 	}
 
-	got := normalizeSpokeCommandSpecs(input)
+	got := spokebridge.NormalizeCommandSpecs(input)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 normalized commands, got %d (%#v)", len(got), got)
 	}
@@ -85,26 +89,26 @@ func TestNormalizeSpokeOptionType(t *testing.T) {
 	}
 
 	for input, want := range tests {
-		if got := normalizeSpokeOptionType(input); got != want {
+		if got := spokebridge.NormalizeOptionType(input); got != want {
 			t.Fatalf("normalizeSpokeOptionType(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
 
 func TestDiscordOptionTypeMappings(t *testing.T) {
-	if got := discordOptionType("integer"); got != discordgo.ApplicationCommandOptionInteger {
+	if got := spokebridge.DiscordOptionType("integer"); got != discordgo.ApplicationCommandOptionInteger {
 		t.Fatalf("expected integer mapping, got %v", got)
 	}
-	if got := discordOptionType("number"); got != discordgo.ApplicationCommandOptionNumber {
+	if got := spokebridge.DiscordOptionType("number"); got != discordgo.ApplicationCommandOptionNumber {
 		t.Fatalf("expected number mapping, got %v", got)
 	}
-	if got := discordOptionType("boolean"); got != discordgo.ApplicationCommandOptionBoolean {
+	if got := spokebridge.DiscordOptionType("boolean"); got != discordgo.ApplicationCommandOptionBoolean {
 		t.Fatalf("expected boolean mapping, got %v", got)
 	}
-	if got := discordOptionType("attachment"); got != discordgo.ApplicationCommandOptionAttachment {
+	if got := spokebridge.DiscordOptionType("attachment"); got != discordgo.ApplicationCommandOptionAttachment {
 		t.Fatalf("expected attachment mapping, got %v", got)
 	}
-	if got := discordOptionType("anything-else"); got != discordgo.ApplicationCommandOptionString {
+	if got := spokebridge.DiscordOptionType("anything-else"); got != discordgo.ApplicationCommandOptionString {
 		t.Fatalf("expected fallback string mapping, got %v", got)
 	}
 }
@@ -121,7 +125,7 @@ func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
 		"proof":      map[string]any{"id": "a1"},
 	}
 
-	got := pruneCommandOptions(input)
+	got := spokebridge.PruneCommandOptions(input)
 
 	if got["argument"] != "30m" {
 		t.Fatalf("expected trimmed argument option, got %#v", got["argument"])
@@ -148,19 +152,19 @@ func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
 
 func TestTruncateForDiscord(t *testing.T) {
 	short := "hello"
-	if got := truncateForDiscord(short); got != short {
+	if got := spokebridge.TruncateForDiscord(short); got != short {
 		t.Fatalf("expected unchanged short message, got %q", got)
 	}
 
-	exact := strings.Repeat("a", discordResponseCharacterLimit)
-	if got := truncateForDiscord(exact); got != exact {
+	exact := strings.Repeat("a", testDiscordResponseCharacterLimit)
+	if got := spokebridge.TruncateForDiscord(exact); got != exact {
 		t.Fatalf("expected unchanged exact-limit message, got len=%d", len(got))
 	}
 
-	over := strings.Repeat("b", discordResponseCharacterLimit+10)
-	got := truncateForDiscord(over)
-	if len(got) != discordResponseCharacterLimit {
-		t.Fatalf("expected truncated length %d, got %d", discordResponseCharacterLimit, len(got))
+	over := strings.Repeat("b", testDiscordResponseCharacterLimit+10)
+	got := spokebridge.TruncateForDiscord(over)
+	if len(got) != testDiscordResponseCharacterLimit {
+		t.Fatalf("expected truncated length %d, got %d", testDiscordResponseCharacterLimit, len(got))
 	}
 	if !strings.HasSuffix(got, "...") {
 		t.Fatalf("expected truncated message to end with ellipsis, got %q", got[len(got)-3:])
@@ -168,18 +172,16 @@ func TestTruncateForDiscord(t *testing.T) {
 }
 
 func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
-	bridge := &spokeCommandBridge{
-		commands: map[string]spokeCommandSpec{
-			"status": {
-				Name:        "status",
-				Description: "status desc",
-			},
-			"resume": {
-				Name:        "resume",
-				Description: "resume desc",
-			},
+	bridge := spokebridge.NewBridge(nil, nil, "", "", map[string]spokebridge.CommandSpec{
+		"status": {
+			Name:        "status",
+			Description: "status desc",
 		},
-	}
+		"resume": {
+			Name:        "resume",
+			Description: "resume desc",
+		},
+	})
 
 	got := bridge.BuildDiscordCommands()
 	if len(got) != 2 {
@@ -193,11 +195,11 @@ func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
 }
 
 func TestFormatSpokeCommandFailure(t *testing.T) {
-	if got := formatSpokeCommandFailure(nil); got != "" {
+	if got := spokebridge.FormatCommandFailure(nil); got != "" {
 		t.Fatalf("expected empty string for nil error, got %q", got)
 	}
 
-	if got := formatSpokeCommandFailure(errors.New("boom")); got != "Command failed: boom" {
+	if got := spokebridge.FormatCommandFailure(errors.New("boom")); got != "Command failed: boom" {
 		t.Fatalf("unexpected failure formatting: %q", got)
 	}
 }

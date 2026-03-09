@@ -25,6 +25,7 @@
 - `BEEMINDER_USERNAME`
 - `BEEMINDER_GOAL_SLUG`
 - `DISCORD_HUB_NOTIFY_URL`
+- `DISCORD_HUB_NOTIFY_AUTH_TOKEN`
 - `BEEMINDER_NOTIFY_CHANNEL`
 
 Copy `cmd/beeminder-spoke/.env.example` to `cmd/beeminder-spoke/.env` and fill values.

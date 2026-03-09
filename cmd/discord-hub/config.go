@@ -11,6 +11,7 @@ type hubConfig struct {
 	DiscordToken    string
 	GuildID         string
 	HTTPAddr        string
+	NotifyAuthToken string
 	CriticalMention string
 	ChannelMap      map[string]string
 }
@@ -27,6 +28,11 @@ func loadHubConfig() (hubConfig, error) {
 	httpAddr := strings.TrimSpace(os.Getenv("HUB_HTTP_ADDR"))
 	if httpAddr == "" {
 		return hubConfig{}, errors.New("HUB_HTTP_ADDR is required")
+	}
+
+	notifyAuthToken := strings.TrimSpace(os.Getenv("HUB_NOTIFY_AUTH_TOKEN"))
+	if notifyAuthToken == "" {
+		return hubConfig{}, errors.New("HUB_NOTIFY_AUTH_TOKEN is required")
 	}
 
 	guildID := strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID"))
@@ -70,6 +76,7 @@ func loadHubConfig() (hubConfig, error) {
 		DiscordToken:    token,
 		GuildID:         guildID,
 		HTTPAddr:        httpAddr,
+		NotifyAuthToken: notifyAuthToken,
 		CriticalMention: criticalMention,
 		ChannelMap:      buildChannelMap(kalshiAlertsChannelID, mandarinStreaksChannelID),
 	}, nil

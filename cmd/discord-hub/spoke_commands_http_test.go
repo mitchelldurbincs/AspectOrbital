@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
@@ -24,13 +25,9 @@ func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		log:         log.New(io.Discard, "", 0),
-		httpClient:  server.Client(),
-		commandsURL: server.URL,
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
 
-	commands, err := bridge.fetchCommands(context.Background())
+	commands, err := bridge.FetchCommands(context.Background())
 	if err != nil {
 		t.Fatalf("fetchCommands returned error: %v", err)
 	}
@@ -49,13 +46,9 @@ func TestFetchCommandsReturnsErrorForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		log:         log.New(io.Discard, "", 0),
-		httpClient:  server.Client(),
-		commandsURL: server.URL,
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
 
-	_, err := bridge.fetchCommands(context.Background())
+	_, err := bridge.FetchCommands(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -65,7 +58,7 @@ func TestFetchCommandsReturnsErrorForNon2xxResponse(t *testing.T) {
 }
 
 func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
-	var captured spokeCommandRequest
+	var captured spokecontract.CommandRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -80,10 +73,7 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		httpClient: server.Client(),
-		commandURL: server.URL,
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
 
 	message, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, map[string]any{
 		"duration": " 30m ",
@@ -121,10 +111,7 @@ func TestExecuteCommandRejectsMissingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		httpClient: server.Client(),
-		commandURL: server.URL,
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
 
 	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {
@@ -138,10 +125,7 @@ func TestExecuteCommandReturnsErrorMessageForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		httpClient: server.Client(),
-		commandURL: server.URL,
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
 
 	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {

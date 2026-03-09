@@ -59,6 +59,7 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 		session:         session,
 		channelNameToID: cfg.ChannelMap,
 		criticalMention: cfg.CriticalMention,
+		notifyAuthToken: cfg.NotifyAuthToken,
 	}
 
 	httpServer := newHTTPServer(cfg.HTTPAddr, handler)

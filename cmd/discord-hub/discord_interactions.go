@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
@@ -15,7 +16,7 @@ var respondEphemeralFunc = respondEphemeral
 var deferEphemeralFunc = deferEphemeral
 var followupEphemeralFunc = followupEphemeral
 
-func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func interactionHandler(logger *log.Logger, spokeBridge *spokebridge.Bridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil || i.Type != discordgo.InteractionApplicationCommand {
 			return
@@ -44,14 +45,14 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 			return
 		}
 
-		execCtx, cancel := context.WithTimeout(context.Background(), spokeCommandHTTPTimeout)
+		execCtx, cancel := context.WithTimeout(context.Background(), spokebridge.CommandHTTPTimeout)
 		defer cancel()
 
 		commandContext := interactionCommandContext(i)
 		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, commandContext, options)
 		if err != nil {
 			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
-			if respondErr := followupEphemeralFunc(s, i.Interaction, formatSpokeCommandFailure(err)); respondErr != nil {
+			if respondErr := followupEphemeralFunc(s, i.Interaction, spokebridge.FormatCommandFailure(err)); respondErr != nil {
 				logger.Printf("failed to send spoke command error response: %v", respondErr)
 			}
 			return

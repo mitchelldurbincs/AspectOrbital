@@ -6,6 +6,7 @@ use serde::Serialize;
 pub struct DiscordClient {
     client: Client,
     notify_url: String,
+    notify_auth_token: String,
     default_channel: String,
     default_severity: String,
 }
@@ -22,12 +23,14 @@ impl DiscordClient {
     pub fn new(
         client: Client,
         notify_url: String,
+        notify_auth_token: String,
         default_channel: String,
         default_severity: String,
     ) -> Self {
         Self {
             client,
             notify_url,
+            notify_auth_token,
             default_channel,
             default_severity,
         }
@@ -45,6 +48,7 @@ impl DiscordClient {
         let response = self
             .client
             .post(&self.notify_url)
+            .bearer_auth(&self.notify_auth_token)
             .json(&payload)
             .send()
             .await

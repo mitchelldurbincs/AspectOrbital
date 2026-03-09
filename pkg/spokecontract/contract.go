@@ -11,14 +11,6 @@ const (
 	CatalogVersion = 1
 )
 
-var allowedOptionTypes = map[string]struct{}{
-	"string":     {},
-	"integer":    {},
-	"number":     {},
-	"boolean":    {},
-	"attachment": {},
-}
-
 type CommandCatalog struct {
 	Version  int           `json:"version"`
 	Service  string        `json:"service"`
@@ -100,52 +92,21 @@ func ValidateCatalog(catalog CommandCatalog) error {
 		return err
 	}
 
-	if catalog.Version != CatalogVersion {
-		return fmt.Errorf("version must be %d", CatalogVersion)
-	}
-	if strings.TrimSpace(catalog.Service) == "" {
-		return errors.New("service is required")
-	}
-	if len(catalog.Commands) == 0 {
-		return errors.New("commands must include at least one command")
-	}
-
 	seen := make(map[string]struct{}, len(catalog.Commands))
 	for _, command := range catalog.Commands {
 		name := NormalizeCommandName(command.Name)
-		if err := ValidateCommandName(name); err != nil {
-			return fmt.Errorf("invalid command name %q: %w", command.Name, err)
-		}
 		if _, ok := seen[name]; ok {
 			return fmt.Errorf("duplicate command name %q", name)
 		}
 		seen[name] = struct{}{}
 
-		if strings.TrimSpace(command.Description) == "" {
-			return fmt.Errorf("command %q description is required", name)
-		}
-
 		optionSeen := make(map[string]struct{}, len(command.Options))
 		for _, option := range command.Options {
 			oname := NormalizeCommandName(option.Name)
-			if err := ValidateCommandName(oname); err != nil {
-				return fmt.Errorf("invalid option name %q for command %q: %w", option.Name, name, err)
-			}
 			if _, ok := optionSeen[oname]; ok {
 				return fmt.Errorf("duplicate option name %q for command %q", oname, name)
 			}
 			optionSeen[oname] = struct{}{}
-
-			typeName := NormalizeOptionType(option.Type)
-			if typeName == "" {
-				return fmt.Errorf("invalid option type %q for command %q option %q", option.Type, name, oname)
-			}
-			if _, ok := allowedOptionTypes[typeName]; !ok {
-				return fmt.Errorf("unsupported option type %q for command %q option %q", typeName, name, oname)
-			}
-			if strings.TrimSpace(option.Description) == "" {
-				return fmt.Errorf("description is required for command %q option %q", name, oname)
-			}
 		}
 	}
 

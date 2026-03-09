@@ -49,7 +49,7 @@ func run(logger *log.Logger) error {
 
 	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
 	beeminder := newBeeminderClient(cfg, httpClient)
-	hub := hubnotify.NewClient(cfg.HubNotifyURL, httpClient)
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, cfg.HubNotifyAuthToken, httpClient)
 	engine := newReminderEngine(cfg)
 
 	bootCtx, bootCancel := context.WithTimeout(context.Background(), cycleTimeout)

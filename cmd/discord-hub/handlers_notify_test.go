@@ -38,7 +38,12 @@ func testHubHandler(sender discordMessageSender) *hubHandler {
 		session:         sender,
 		channelNameToID: map[string]string{"alerts": "123"},
 		criticalMention: "<@999>",
+		notifyAuthToken: "test-notify-token",
 	}
+}
+
+func authorizeNotifyRequest(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer test-notify-token")
 }
 
 func TestValidateNotifyPayloadTrimsAndNormalizesSeverity(t *testing.T) {
@@ -115,6 +120,7 @@ func TestNotifySendsDiscordMessageAndReturns202(t *testing.T) {
 	h := testHubHandler(sender)
 
 	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"Disk is full","severity":"critical"}`))
+	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.notify(rec, req)
@@ -141,6 +147,7 @@ func TestNotifyUnknownChannelReturns400(t *testing.T) {
 	h := testHubHandler(sender)
 
 	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"missing","message":"hello","severity":"info"}`))
+	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.notify(rec, req)
@@ -158,6 +165,7 @@ func TestNotifyDiscordFailureReturns502(t *testing.T) {
 	h := testHubHandler(sender)
 
 	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.notify(rec, req)
@@ -177,5 +185,32 @@ func TestNotifyRejectsNonPostRequests(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestNotifyMissingBearerTokenReturns401(t *testing.T) {
+	h := testHubHandler(&fakeMessageSender{})
+
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	rec := httptest.NewRecorder()
+
+	h.notify(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestNotifyInvalidBearerTokenReturns401(t *testing.T) {
+	h := testHubHandler(&fakeMessageSender{})
+
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	rec := httptest.NewRecorder()
+
+	h.notify(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
 	}
 }

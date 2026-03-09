@@ -31,6 +31,7 @@
 - `PLAID_ACCESS_TOKENS` (comma-separated Item access tokens)
 - `FINANCE_NOTIFY_CHANNEL`
 - `FINANCE_HUB_NOTIFY_URL`
+- `FINANCE_HUB_NOTIFY_AUTH_TOKEN`
 
 ## Local run
 

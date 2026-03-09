@@ -12,6 +12,7 @@ import (
 
 type Client struct {
 	notifyURL  string
+	authToken  string
 	httpClient *http.Client
 }
 
@@ -21,9 +22,10 @@ type NotifyRequest struct {
 	Severity      string `json:"severity"`
 }
 
-func NewClient(notifyURL string, httpClient *http.Client) *Client {
+func NewClient(notifyURL string, authToken string, httpClient *http.Client) *Client {
 	return &Client{
 		notifyURL:  notifyURL,
+		authToken:  authToken,
 		httpClient: httpClient,
 	}
 }
@@ -39,6 +41,7 @@ func (c *Client) Notify(ctx context.Context, payload NotifyRequest) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.authToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -13,6 +13,7 @@ func clearHubEnv(t *testing.T) {
 		"DISCORD_BOT_TOKEN",
 		"DISCORD_GUILD_ID",
 		"HUB_HTTP_ADDR",
+		"HUB_NOTIFY_AUTH_TOKEN",
 		"DISCORD_CRITICAL_MENTION",
 		"DISCORD_CHANNEL_KALSHI_ALERTS",
 		"DISCORD_CHANNEL_MANDARIN_STREAKS",
@@ -42,6 +43,7 @@ func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "abc123")
 	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("DISCORD_GUILD_ID", "guild-1")
 	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
 	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
@@ -68,6 +70,20 @@ func TestLoadHubConfigRequiresHTTPAddrWhenUnset(t *testing.T) {
 		t.Fatal("expected error for missing HUB_HTTP_ADDR")
 	}
 	if !strings.Contains(err.Error(), "HUB_HTTP_ADDR is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadHubConfigRequiresNotifyAuthTokenWhenUnset(t *testing.T) {
+	clearHubEnv(t)
+	t.Setenv("DISCORD_BOT_TOKEN", "Bot token")
+	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected error for missing HUB_NOTIFY_AUTH_TOKEN")
+	}
+	if !strings.Contains(err.Error(), "HUB_NOTIFY_AUTH_TOKEN is required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -105,6 +121,7 @@ func TestLoadHubConfigRequiresSpokeCommandsEnabled(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "token")
 	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("DISCORD_GUILD_ID", "guild-1")
 	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
 	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")
@@ -123,6 +140,7 @@ func TestLoadHubConfigRequiresSpokeBridgeURLsWhenEnabled(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "token")
 	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
+	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("DISCORD_GUILD_ID", "guild-1")
 	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
 	t.Setenv("DISCORD_CHANNEL_KALSHI_ALERTS", "111")

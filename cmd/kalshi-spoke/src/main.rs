@@ -303,6 +303,7 @@ async fn main() -> Result<()> {
     let discord = Arc::new(DiscordClient::new(
         http_client.clone(),
         config.hub_notify_url.clone(),
+        config.hub_notify_auth_token.clone(),
         config.notify_channel.clone(),
         config.notify_severity.clone(),
     ));

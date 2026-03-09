@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
+
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 )
 
 type commandRegistrar interface {
@@ -21,7 +23,7 @@ func upsertPingCommand(session commandRegistrar, appID, guildID string) (*discor
 	return upsertCommand(session, appID, guildID, command)
 }
 
-func upsertSpokeCommands(session commandRegistrar, appID, guildID string, bridge *spokeCommandBridge) error {
+func upsertSpokeCommands(session commandRegistrar, appID, guildID string, bridge *spokebridge.Bridge) error {
 	existingByName, err := listCommandsByName(session, appID, guildID)
 	if err != nil {
 		return fmt.Errorf("could not list existing commands for spoke sync: %w", err)

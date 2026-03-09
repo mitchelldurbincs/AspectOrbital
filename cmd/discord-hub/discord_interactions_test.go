@@ -12,6 +12,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
@@ -95,7 +96,7 @@ func TestInteractionHandlerRespondsToPing(t *testing.T) {
 }
 
 func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
-	var captured spokeCommandRequest
+	var captured spokecontract.CommandRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -110,14 +111,9 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		log:        log.New(io.Discard, "", 0),
-		httpClient: server.Client(),
-		commandURL: server.URL,
-		commands: map[string]spokeCommandSpec{
-			"status": {Name: "status"},
-		},
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
+		"status": {Name: "status"},
+	})
 
 	var messages []string
 	prevDefer := deferEphemeralFunc
@@ -184,14 +180,9 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := &spokeCommandBridge{
-		log:        log.New(io.Discard, "", 0),
-		httpClient: server.Client(),
-		commandURL: server.URL,
-		commands: map[string]spokeCommandSpec{
-			"status": {Name: "status"},
-		},
-	}
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
+		"status": {Name: "status"},
+	})
 
 	var messages []string
 	prevDefer := deferEphemeralFunc

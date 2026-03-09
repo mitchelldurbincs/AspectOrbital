@@ -53,7 +53,7 @@ func run(logger *log.Logger) error {
 	}
 
 	service := accountability.NewService(cfg.DBPath, cfg.ExpiryPollInterval, cfg.ExpiryGracePeriod)
-	hub := hubnotify.NewClient(cfg.HubNotifyURL, &http.Client{Timeout: 10 * time.Second})
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, cfg.HubNotifyAuthToken, &http.Client{Timeout: 10 * time.Second})
 	openAIClient := newOpenAIVisionClient(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel, &http.Client{Timeout: cfg.OpenAITimeout})
 	policies, err := loadPolicyCatalog(cfg.PolicyFile, openAIClient)
 	if err != nil {
@@ -115,6 +115,7 @@ type config struct {
 	ExpiryGracePeriod  time.Duration
 	ReminderInterval   time.Duration
 	HubNotifyURL       string
+	HubNotifyAuthToken string
 	NotifyChannel      string
 	NotifySeverity     string
 	PolicyFile         string
@@ -166,6 +167,10 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	cfg.HubNotifyURL, err = configutil.StringEnvRequired("ACCOUNTABILITY_HUB_NOTIFY_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.HubNotifyAuthToken, err = configutil.StringEnvRequired("ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN")
 	if err != nil {
 		return config{}, err
 	}

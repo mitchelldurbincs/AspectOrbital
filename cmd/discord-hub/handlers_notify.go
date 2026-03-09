@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"errors"
 	"log"
 	"net/http"
@@ -22,6 +23,7 @@ type hubHandler struct {
 	session         discordMessageSender
 	channelNameToID map[string]string
 	criticalMention string
+	notifyAuthToken string
 }
 
 type discordMessageSender interface {
@@ -31,6 +33,12 @@ type discordMessageSender interface {
 func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !h.isNotifyAuthorized(r) {
+		h.log.Printf("unauthorized /notify request from %s", r.RemoteAddr)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -63,6 +71,21 @@ func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpjson.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
+}
+
+func (h *hubHandler) isNotifyAuthorized(r *http.Request) bool {
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	parts := strings.Fields(authorization)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return false
+	}
+
+	providedToken := strings.TrimSpace(parts[1])
+	if providedToken == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(providedToken), []byte(h.notifyAuthToken)) == 1
 }
 
 func (h *hubHandler) writeBadRequest(w http.ResponseWriter, message string) {
