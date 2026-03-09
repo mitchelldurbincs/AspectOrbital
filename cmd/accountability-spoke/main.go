@@ -16,8 +16,8 @@ import (
 	"github.com/joho/godotenv"
 
 	"personal-infrastructure/pkg/accountability"
-	"personal-infrastructure/pkg/beeminder"
 	"personal-infrastructure/pkg/configutil"
+	"personal-infrastructure/pkg/hubnotify"
 	"personal-infrastructure/pkg/lifecycle"
 	"personal-infrastructure/pkg/spokecontract"
 )
@@ -52,28 +52,26 @@ func run(logger *log.Logger) error {
 		logger.Fatalf("bootstrap db: %v", err)
 	}
 
-	var bee *beeminder.Client
-	if cfg.BeeminderAuthToken != "" && cfg.BeeminderUsername != "" {
-		bee = beeminder.NewClient(
-			beeminder.WithBaseURL(cfg.BeeminderBaseURL),
-			beeminder.WithAuthToken(cfg.BeeminderAuthToken),
-			beeminder.WithUsername(cfg.BeeminderUsername),
-		)
+	service := accountability.NewService(cfg.DBPath, cfg.ExpiryPollInterval, cfg.ExpiryGracePeriod)
+	hub := hubnotify.NewClient(cfg.HubNotifyURL, &http.Client{Timeout: 10 * time.Second})
+	openAIClient := newOpenAIVisionClient(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel, &http.Client{Timeout: cfg.OpenAITimeout})
+	policies, err := loadPolicyCatalog(cfg.PolicyFile, openAIClient)
+	if err != nil {
+		return fmt.Errorf("invalid policy configuration: %w", err)
 	}
-	var beeminderWriter accountability.BeeminderWriter
-	if bee != nil {
-		beeminderWriter = beeminderClientAdapter{client: bee}
-	}
-	service := accountability.NewService(cfg.DBPath, beeminderWriter, cfg.ExpiryPollInterval)
 
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	defer loopCancel()
 	go service.StartExpiryLoop(loopCtx)
+	go startReminderLoop(loopCtx, logger, cfg, service, hub)
 	if _, err := service.ExpireOverdue(context.Background()); err != nil {
 		logger.Printf("initial expiry sweep failed: %v", err)
 	}
+	if err := runReminderSweep(context.Background(), logger, cfg, service, hub); err != nil {
+		logger.Printf("initial reminder sweep failed: %v", err)
+	}
 
-	app := &spokeApp{cfg: cfg, service: service}
+	app := &spokeApp{cfg: cfg, service: service, policies: policies}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", app.handleHealthz)
 	mux.HandleFunc("/control/commands", app.handleCommands)
@@ -110,33 +108,27 @@ func run(logger *log.Logger) error {
 	return nil
 }
 
-type beeminderClientAdapter struct {
-	client *beeminder.Client
-}
-
-func (a beeminderClientAdapter) CreateDatapoint(ctx context.Context, datapoint accountability.Datapoint) error {
-	if a.client == nil {
-		return nil
-	}
-	return a.client.CreateDatapoint(ctx, beeminder.DatapointRequest{
-		GoalSlug: datapoint.GoalSlug,
-		Value:    datapoint.Value,
-		Comment:  datapoint.Comment,
-		Time:     datapoint.Time,
-	})
-}
-
 type config struct {
 	HTTPAddr           string
 	DBPath             string
 	ExpiryPollInterval time.Duration
+	ExpiryGracePeriod  time.Duration
+	ReminderInterval   time.Duration
+	HubNotifyURL       string
+	NotifyChannel      string
+	NotifySeverity     string
+	PolicyFile         string
+	OpenAIBaseURL      string
+	OpenAIAPIKey       string
+	OpenAIModel        string
+	OpenAITimeout      time.Duration
+	DefaultSnooze      time.Duration
+	MaxSnooze          time.Duration
 	CommitCommandName  string
 	ProofCommandName   string
 	StatusCommandName  string
 	CancelCommandName  string
-	BeeminderBaseURL   string
-	BeeminderAuthToken string
-	BeeminderUsername  string
+	SnoozeCommandName  string
 }
 
 func loadConfig() (config, error) {
@@ -154,6 +146,46 @@ func loadConfig() (config, error) {
 	}
 
 	cfg.ExpiryPollInterval, err = configutil.DurationEnvRequired("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.ExpiryGracePeriod, err = configutil.DurationEnvRequired("ACCOUNTABILITY_EXPIRY_GRACE_PERIOD")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.ReminderInterval, err = configutil.DurationEnvRequired("ACCOUNTABILITY_REMINDER_INTERVAL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.DefaultSnooze, err = configutil.DurationEnvRequired("ACCOUNTABILITY_DEFAULT_SNOOZE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.MaxSnooze, err = configutil.DurationEnvRequired("ACCOUNTABILITY_MAX_SNOOZE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.HubNotifyURL, err = configutil.StringEnvRequired("ACCOUNTABILITY_HUB_NOTIFY_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifyChannel, err = configutil.StringEnvRequired("ACCOUNTABILITY_NOTIFY_CHANNEL")
+	if err != nil {
+		return config{}, err
+	}
+	notifySeverity, err := configutil.StringEnvRequired("ACCOUNTABILITY_NOTIFY_SEVERITY")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifySeverity = configutil.NormalizeSeverity(notifySeverity)
+	cfg.PolicyFile, err = configutil.StringEnvRequired("ACCOUNTABILITY_POLICY_FILE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.OpenAIBaseURL = configutil.StringEnv("ACCOUNTABILITY_OPENAI_BASE_URL", "https://api.openai.com/v1")
+	cfg.OpenAIAPIKey = configutil.StringEnv("ACCOUNTABILITY_OPENAI_API_KEY", "")
+	cfg.OpenAIModel = configutil.StringEnv("ACCOUNTABILITY_OPENAI_MODEL", "gpt-4.1-mini")
+	cfg.OpenAITimeout, err = configutil.DurationEnv("ACCOUNTABILITY_OPENAI_TIMEOUT", 20*time.Second)
 	if err != nil {
 		return config{}, err
 	}
@@ -182,26 +214,75 @@ func loadConfig() (config, error) {
 	}
 	cfg.CancelCommandName = normalizeCommand(cancelCommandName)
 
-	cfg.BeeminderBaseURL, err = configutil.StringEnvRequired("BEEMINDER_API_BASE_URL")
+	snoozeCommandName, err := configutil.StringEnvRequired("ACCOUNTABILITY_COMMAND_SNOOZE")
 	if err != nil {
 		return config{}, err
 	}
-
-	cfg.BeeminderAuthToken, err = configutil.StringEnvRequired("BEEMINDER_AUTH_TOKEN")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.BeeminderUsername, err = configutil.StringEnvRequired("BEEMINDER_USERNAME")
-	if err != nil {
-		return config{}, err
-	}
+	cfg.SnoozeCommandName = normalizeCommand(snoozeCommandName)
 
 	if cfg.ExpiryPollInterval <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL must be positive")
 	}
+	if cfg.ExpiryGracePeriod < 0 {
+		return config{}, errors.New("ACCOUNTABILITY_EXPIRY_GRACE_PERIOD must be zero or positive")
+	}
+	if cfg.ReminderInterval <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_REMINDER_INTERVAL must be positive")
+	}
+	if cfg.DefaultSnooze <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_DEFAULT_SNOOZE must be positive")
+	}
+	if cfg.MaxSnooze <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_MAX_SNOOZE must be positive")
+	}
+	if cfg.DefaultSnooze > cfg.MaxSnooze {
+		return config{}, errors.New("ACCOUNTABILITY_DEFAULT_SNOOZE cannot exceed ACCOUNTABILITY_MAX_SNOOZE")
+	}
+	if strings.TrimSpace(cfg.PolicyFile) == "" {
+		return config{}, errors.New("ACCOUNTABILITY_POLICY_FILE is required")
+	}
+	if cfg.OpenAITimeout <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_OPENAI_TIMEOUT must be positive")
+	}
+	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
+		return config{}, fmt.Errorf("ACCOUNTABILITY_NOTIFY_SEVERITY %w", err)
+	}
 
 	return cfg, nil
+}
+
+func startReminderLoop(ctx context.Context, logger *log.Logger, cfg config, service *accountability.Service, hub *hubnotify.Client) {
+	t := time.NewTicker(cfg.ExpiryPollInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := runReminderSweep(ctx, logger, cfg, service, hub); err != nil {
+				logger.Printf("reminder sweep failed: %v", err)
+			}
+		}
+	}
+}
+
+func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, service *accountability.Service, hub *hubnotify.Client) error {
+	commitments, err := service.OverdueNeedingReminder(ctx, cfg.ReminderInterval)
+	if err != nil {
+		return err
+	}
+	for _, commitment := range commitments {
+		message := fmt.Sprintf("<@%s> Reminder: %q was due at %s. Submit /%s with proof or /%s to delay.", commitment.UserID, commitment.Task, commitment.Deadline.Format(time.RFC3339), cfg.ProofCommandName, cfg.SnoozeCommandName)
+		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{TargetChannel: cfg.NotifyChannel, Message: message, Severity: cfg.NotifySeverity})
+		if notifyErr != nil {
+			logger.Printf("failed reminder notify for commitment=%d user=%s: %v", commitment.ID, commitment.UserID, notifyErr)
+			continue
+		}
+		if markErr := service.MarkReminderSent(ctx, commitment.ID); markErr != nil {
+			logger.Printf("failed to mark reminder sent for commitment=%d: %v", commitment.ID, markErr)
+		}
+	}
+	return nil
 }
 
 func warnOnKnownSpokePortCollisions(logger *log.Logger) {

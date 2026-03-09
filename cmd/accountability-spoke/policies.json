@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "defaultPreset": "morning_gym",
+  "presets": {
+    "morning_gym": {
+      "task": "Morning gym check-in",
+      "engine": "text_reply",
+      "engineConfig": {
+        "minChars": 8
+      }
+    }
+  }
+}

@@ -14,8 +14,9 @@ import (
 )
 
 type spokeApp struct {
-	cfg     config
-	service *accountability.Service
+	cfg      config
+	service  *accountability.Service
+	policies policyCatalog
 }
 
 type commandRequest = spokecontract.CommandRequest
@@ -32,12 +33,13 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 		Version: spokecontract.CatalogVersion,
 		Service: commandCatalogService,
 		Commands: []commandDefinition{
-			{Name: a.cfg.CommitCommandName, Description: "Commit to a task with a deadline", Options: []commandOptionDefinition{{Name: "task", Type: "string", Description: "Task description", Required: true}, {Name: "goal", Type: "string", Description: "Beeminder goal slug", Required: true}, {Name: "deadline", Type: "string", Description: "RFC3339 timestamp or duration like 2h", Required: true}}},
-			{Name: a.cfg.ProofCommandName, Description: "Submit proof for your active commitment", Options: []commandOptionDefinition{{Name: "proof", Type: "attachment", Description: "Proof attachment", Required: true}}},
+			{Name: a.cfg.CommitCommandName, Description: "Commit to a task with a deadline", Options: []commandOptionDefinition{{Name: "deadline", Type: "string", Description: "RFC3339 timestamp or duration like 2h", Required: true}, {Name: "task", Type: "string", Description: "Task description override", Required: false}, {Name: "preset", Type: "string", Description: "Policy preset name override", Required: false}}},
+			{Name: a.cfg.ProofCommandName, Description: "Submit proof for your active commitment", Options: []commandOptionDefinition{{Name: "proof", Type: "attachment", Description: "Proof attachment", Required: false}, {Name: "text", Type: "string", Description: "Proof text reply", Required: false}}},
+			{Name: a.cfg.SnoozeCommandName, Description: "Snooze reminders for your active commitment", Options: []commandOptionDefinition{{Name: "duration", Type: "string", Description: "Duration like 10m", Required: false}}},
 			{Name: a.cfg.StatusCommandName, Description: "Show your active commitment"},
 			{Name: a.cfg.CancelCommandName, Description: "Cancel your active commitment"},
 		},
-		Names: []string{a.cfg.CancelCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.StatusCommandName},
+		Names: []string{a.cfg.CancelCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName},
 	})
 }
 
@@ -54,7 +56,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := spokecontract.NormalizeCommandName(req.Command)
-	now := time.Now().UTC()
+	now := time.Now()
 	switch cmd {
 	case a.cfg.CommitCommandName:
 		deadline, err := parseDeadline(now, mapOptionString(req.Options, "deadline"))
@@ -62,19 +64,39 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		commitment, err := a.service.Commit(r.Context(), userID, mapOptionString(req.Options, "task"), mapOptionString(req.Options, "goal"), deadline)
+		resolvedPolicy, err := a.policies.ResolveCommit(mapOptionString(req.Options, "task"), mapOptionString(req.Options, "preset"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Committed until %s for %s", commitment.Deadline.Format(time.RFC3339), commitment.Task), "data": commitment})
-	case a.cfg.ProofCommandName:
-		attachment := parseAttachment(req.Options["proof"])
-		if attachment.ID == "" {
-			http.Error(w, "proof attachment is required", http.StatusBadRequest)
+		commitment, err := a.service.CommitWithPolicy(r.Context(), userID, resolvedPolicy.Task, deadline, resolvedPolicy.Preset, resolvedPolicy.Engine, resolvedPolicy.ConfigJSON)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		commitment, err := a.service.SubmitProof(r.Context(), userID, attachment)
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), "data": commitment})
+	case a.cfg.ProofCommandName:
+		active, err := a.service.StatusForUser(r.Context(), userID)
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				http.Error(w, "no active commitment", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		attachment := parseAttachment(req.Options["proof"])
+		proofText := mapOptionString(req.Options, "text")
+		evaluation, err := a.policies.Evaluate(r.Context(), active, attachment, proofText)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !evaluation.Pass {
+			http.Error(w, evaluation.Reason, http.StatusBadRequest)
+			return
+		}
+		commitment, err := a.service.SubmitProof(r.Context(), userID, accountability.ProofSubmission{Attachment: attachment, Text: proofText, Verdict: evaluation.Verdict})
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "not found") {
 				http.Error(w, "no active commitment", http.StatusBadRequest)
@@ -98,7 +120,30 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Active commitment: %s (due %s)", commitment.Task, commitment.Deadline.Format(time.RFC3339)), "data": commitment})
+		message := fmt.Sprintf("Active commitment: %s (due %s)", commitment.Task, commitment.Deadline.Format(time.RFC3339))
+		if commitment.PolicyPreset != "" {
+			message = fmt.Sprintf("%s; preset=%s", message, commitment.PolicyPreset)
+		}
+		if !commitment.SnoozedUntil.IsZero() && commitment.SnoozedUntil.After(now) {
+			message = fmt.Sprintf("%s; reminders snoozed until %s", message, commitment.SnoozedUntil.Format(time.RFC3339))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": message, "data": commitment})
+	case a.cfg.SnoozeCommandName:
+		duration, err := parseSnoozeDuration(mapOptionString(req.Options, "duration"), a.cfg.DefaultSnooze)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		commitment, err := a.service.Snooze(r.Context(), userID, duration, a.cfg.MaxSnooze)
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				http.Error(w, "no active commitment", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), "data": commitment})
 	case a.cfg.CancelCommandName:
 		commitment, err := a.service.Cancel(r.Context(), userID)
 		if err != nil {
@@ -121,16 +166,28 @@ func parseDeadline(now time.Time, raw string) (time.Time, error) {
 		return time.Time{}, errors.New("deadline is required")
 	}
 	if d, err := time.ParseDuration(raw); err == nil {
-		return now.Add(d), nil
+		return now.Add(d).UTC(), nil
 	}
 	if unix, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return time.Unix(unix, 0).UTC(), nil
 	}
 	parsed, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return time.Time{}, errors.New("deadline must be RFC3339, unix seconds, or duration")
+	if err == nil {
+		return parsed.UTC(), nil
 	}
-	return parsed.UTC(), nil
+	clockLayouts := []string{"3:04pm", "3:04 pm", "3pm", "3 pm", "15:04"}
+	for _, layout := range clockLayouts {
+		clock, clockErr := time.ParseInLocation(layout, strings.ToLower(raw), now.Location())
+		if clockErr != nil {
+			continue
+		}
+		candidate := time.Date(now.Year(), now.Month(), now.Day(), clock.Hour(), clock.Minute(), 0, 0, now.Location())
+		if !candidate.After(now) {
+			candidate = candidate.Add(24 * time.Hour)
+		}
+		return candidate.UTC(), nil
+	}
+	return time.Time{}, errors.New("deadline must be RFC3339, unix seconds, duration, or a clock time like 4:30am")
 }
 
 func parseAttachment(raw any) accountability.AttachmentMetadata {
@@ -141,6 +198,21 @@ func parseAttachment(raw any) accountability.AttachmentMetadata {
 		return accountability.AttachmentMetadata{}
 	}
 	return accountability.AttachmentMetadata{ID: strings.TrimSpace(fmt.Sprint(raw))}
+}
+
+func parseSnoozeDuration(raw string, defaultDuration time.Duration) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultDuration, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, errors.New("duration must be a valid duration like 10m")
+	}
+	if d <= 0 {
+		return 0, errors.New("duration must be positive")
+	}
+	return d, nil
 }
 
 func mapOptionString(m map[string]any, key string) string {

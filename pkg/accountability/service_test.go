@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-type fakeBeeminder struct{ calls []Datapoint }
-
-func (f *fakeBeeminder) CreateDatapoint(_ context.Context, req Datapoint) error {
-	f.calls = append(f.calls, req)
-	return nil
-}
-
 func testDBPath(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("sqlite3"); err != nil {
@@ -30,17 +23,16 @@ func testDBPath(t *testing.T) string {
 
 func TestRestartRecoveryKeepsPendingCommitments(t *testing.T) {
 	path := testDBPath(t)
-	bee := &fakeBeeminder{}
 	now := time.Now().UTC()
-	svc := NewService(path, bee, time.Minute)
+	svc := NewService(path, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
 
-	_, err := svc.Commit(context.Background(), "u1", "write", "goal", now.Add(time.Hour))
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	restarted := NewService(path, bee, time.Minute)
+	restarted := NewService(path, time.Minute, 12*time.Hour)
 	got, err := restarted.StatusForUser(context.Background(), "u1")
 	if err != nil {
 		t.Fatal(err)
@@ -50,13 +42,12 @@ func TestRestartRecoveryKeepsPendingCommitments(t *testing.T) {
 	}
 }
 
-func TestDeadlineTransitionMarksOverdueAndWritesConsequence(t *testing.T) {
+func TestDeadlineTransitionMarksOverdue(t *testing.T) {
 	path := testDBPath(t)
-	bee := &fakeBeeminder{}
 	now := time.Now().UTC()
-	svc := NewService(path, bee, time.Minute)
+	svc := NewService(path, time.Minute, 0)
 	svc.now = func() time.Time { return now }
-	_, err := svc.Commit(context.Background(), "u1", "write", "goal", now.Add(5*time.Minute))
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,39 +60,139 @@ func TestDeadlineTransitionMarksOverdueAndWritesConsequence(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("expected 1 expired commitment, got %d", n)
 	}
-	if len(bee.calls) != 1 || bee.calls[0].Value != -1 {
-		t.Fatalf("expected failure datapoint, got %#v", bee.calls)
+	got, err := svc.StatusForUser(context.Background(), "u1")
+	if err == nil {
+		t.Fatalf("expected no active commitment after expiry, got %#v", got)
 	}
 }
 
 func TestProofHandlingIsIdempotent(t *testing.T) {
 	path := testDBPath(t)
-	bee := &fakeBeeminder{}
 	now := time.Now().UTC()
-	svc := NewService(path, bee, time.Minute)
+	svc := NewService(path, time.Minute, 12*time.Hour)
 	svc.now = func() time.Time { return now }
-	_, err := svc.Commit(context.Background(), "u1", "write", "goal", now.Add(time.Hour))
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	meta := AttachmentMetadata{ID: "att1", Filename: "proof.png", URL: "https://example"}
-	first, err := svc.SubmitProof(context.Background(), "u1", meta)
+	first, err := svc.SubmitProof(context.Background(), "u1", ProofSubmission{Attachment: meta, Text: "done"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Status != StatusSuccess {
 		t.Fatalf("expected success, got %s", first.Status)
 	}
-	if len(bee.calls) != 1 || bee.calls[0].Value != 1 {
-		t.Fatalf("expected one success datapoint, got %#v", bee.calls)
-	}
 
-	if _, err := svc.SubmitProof(context.Background(), "u1", meta); err == nil {
+	if _, err := svc.SubmitProof(context.Background(), "u1", ProofSubmission{Attachment: meta, Text: "done"}); err == nil {
 		t.Fatal("expected second proof submit to fail without active commitment")
 	}
-	if len(bee.calls) != 1 {
-		t.Fatalf("expected beeminder calls to remain idempotent, got %#v", bee.calls)
+}
+
+func TestSnoozeHidesReminderUntilElapsed(t *testing.T) {
+	path := testDBPath(t)
+	now := time.Now().UTC()
+	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(-10*time.Minute))
+	if err == nil {
+		t.Fatal("expected commit with past deadline to fail")
+	}
+
+	_, err = svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	commitment, err := svc.Snooze(context.Background(), "u1", 10*time.Minute, 60*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commitment.SnoozedUntil.IsZero() {
+		t.Fatal("expected snoozed_until to be populated")
+	}
+
+	reminders, err := svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 0 {
+		t.Fatalf("expected no reminders while snoozed, got %d", len(reminders))
+	}
+
+	svc.now = func() time.Time { return now.Add(13 * time.Minute) }
+	reminders, err = svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 1 {
+		t.Fatalf("expected one reminder after snooze elapsed, got %d", len(reminders))
+	}
+}
+
+func TestMarkReminderSentThrottlesReminders(t *testing.T) {
+	path := testDBPath(t)
+	now := time.Now().UTC()
+	svc := NewService(path, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(3 * time.Minute) }
+	reminders, err := svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 1 {
+		t.Fatalf("expected one reminder, got %d", len(reminders))
+	}
+
+	if err := svc.MarkReminderSent(context.Background(), reminders[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	reminders, err = svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 0 {
+		t.Fatalf("expected reminder throttling to suppress sends, got %d", len(reminders))
+	}
+}
+
+func TestExpireOverdueUsesGracePeriod(t *testing.T) {
+	path := testDBPath(t)
+	now := time.Now().UTC()
+	svc := NewService(path, time.Minute, 30*time.Minute)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(5 * time.Minute) }
+	n, err := svc.ExpireOverdue(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected zero expirations before grace cutoff, got %d", n)
+	}
+
+	svc.now = func() time.Time { return now.Add(40 * time.Minute) }
+	n, err = svc.ExpireOverdue(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected one expiration after grace cutoff, got %d", n)
 	}
 }
 

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "defaultPreset": "morning_gym",
+  "presets": {
+    "morning_gym": {
+      "task": "Morning gym check-in",
+      "engine": "text_reply",
+      "engineConfig": {
+        "minChars": 8
+      }
+    },
+    "photo_checkin": {
+      "task": "Send a proof photo",
+      "engine": "manual_attachment",
+      "engineConfig": {}
+    },
+    "car_photo": {
+      "task": "Morning gym check-in",
+      "engine": "openai_vision",
+      "engineConfig": {
+        "prompt": "The photo is taken from inside a car and indicates the user is leaving for the gym.",
+        "minConfidence": 0.8
+      }
+    }
+  }
+}

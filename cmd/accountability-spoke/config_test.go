@@ -12,13 +12,19 @@ func clearAccountabilityEnv(t *testing.T) {
 		"ACCOUNTABILITY_SPOKE_HTTP_ADDR",
 		"ACCOUNTABILITY_DB_PATH",
 		"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL",
+		"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD",
+		"ACCOUNTABILITY_REMINDER_INTERVAL",
+		"ACCOUNTABILITY_HUB_NOTIFY_URL",
+		"ACCOUNTABILITY_NOTIFY_CHANNEL",
+		"ACCOUNTABILITY_NOTIFY_SEVERITY",
+		"ACCOUNTABILITY_POLICY_FILE",
+		"ACCOUNTABILITY_DEFAULT_SNOOZE",
+		"ACCOUNTABILITY_MAX_SNOOZE",
 		"ACCOUNTABILITY_COMMAND_COMMIT",
 		"ACCOUNTABILITY_COMMAND_PROOF",
 		"ACCOUNTABILITY_COMMAND_STATUS",
 		"ACCOUNTABILITY_COMMAND_CANCEL",
-		"BEEMINDER_API_BASE_URL",
-		"BEEMINDER_AUTH_TOKEN",
-		"BEEMINDER_USERNAME",
+		"ACCOUNTABILITY_COMMAND_SNOOZE",
 	}
 
 	for _, key := range keys {
@@ -32,13 +38,19 @@ func setAccountabilityRequiredEnv(t *testing.T) {
 	t.Setenv("ACCOUNTABILITY_SPOKE_HTTP_ADDR", "127.0.0.1:8093")
 	t.Setenv("ACCOUNTABILITY_DB_PATH", "file:accountability.db?_pragma=busy_timeout(5000)")
 	t.Setenv("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL", "45s")
+	t.Setenv("ACCOUNTABILITY_EXPIRY_GRACE_PERIOD", "12h")
+	t.Setenv("ACCOUNTABILITY_REMINDER_INTERVAL", "5m")
+	t.Setenv("ACCOUNTABILITY_HUB_NOTIFY_URL", "http://127.0.0.1:8080/notify")
+	t.Setenv("ACCOUNTABILITY_NOTIFY_CHANNEL", "accountability")
+	t.Setenv("ACCOUNTABILITY_NOTIFY_SEVERITY", "warning")
+	t.Setenv("ACCOUNTABILITY_POLICY_FILE", "cmd/accountability-spoke/policies.example.json")
+	t.Setenv("ACCOUNTABILITY_DEFAULT_SNOOZE", "10m")
+	t.Setenv("ACCOUNTABILITY_MAX_SNOOZE", "60m")
 	t.Setenv("ACCOUNTABILITY_COMMAND_COMMIT", "commit")
 	t.Setenv("ACCOUNTABILITY_COMMAND_PROOF", "proof")
 	t.Setenv("ACCOUNTABILITY_COMMAND_STATUS", "status")
 	t.Setenv("ACCOUNTABILITY_COMMAND_CANCEL", "cancel")
-	t.Setenv("BEEMINDER_API_BASE_URL", "https://www.beeminder.com/api/v1")
-	t.Setenv("BEEMINDER_AUTH_TOKEN", "token")
-	t.Setenv("BEEMINDER_USERNAME", "username")
+	t.Setenv("ACCOUNTABILITY_COMMAND_SNOOZE", "a-snooze")
 }
 
 func TestLoadConfigRequiresHTTPAddr(t *testing.T) {
@@ -55,16 +67,31 @@ func TestLoadConfigRequiresHTTPAddr(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRequiresBeeminderAuthToken(t *testing.T) {
+func TestLoadConfigRejectsNonPositiveExpiryPollInterval(t *testing.T) {
 	clearAccountabilityEnv(t)
 	setAccountabilityRequiredEnv(t)
-	t.Setenv("BEEMINDER_AUTH_TOKEN", "")
+	t.Setenv("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL", "0s")
 
 	_, err := loadConfig()
 	if err == nil {
-		t.Fatal("expected error for missing BEEMINDER_AUTH_TOKEN")
+		t.Fatal("expected error for non-positive ACCOUNTABILITY_EXPIRY_POLL_INTERVAL")
 	}
-	if !strings.Contains(err.Error(), "BEEMINDER_AUTH_TOKEN is required") {
+	if !strings.Contains(err.Error(), "ACCOUNTABILITY_EXPIRY_POLL_INTERVAL must be positive") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigRejectsDefaultSnoozeAboveMax(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	t.Setenv("ACCOUNTABILITY_DEFAULT_SNOOZE", "90m")
+	t.Setenv("ACCOUNTABILITY_MAX_SNOOZE", "60m")
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error when ACCOUNTABILITY_DEFAULT_SNOOZE exceeds ACCOUNTABILITY_MAX_SNOOZE")
+	}
+	if !strings.Contains(err.Error(), "ACCOUNTABILITY_DEFAULT_SNOOZE cannot exceed ACCOUNTABILITY_MAX_SNOOZE") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

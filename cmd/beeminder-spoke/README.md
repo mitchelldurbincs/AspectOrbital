@@ -17,7 +17,7 @@
 - Polls Beeminder every minute (configurable).
 - After your configured reminder start time, sends a reminder every 5 minutes until you hit your daily target.
 - Auto-pauses reminders briefly when progress increases (to avoid pinging while you are actively working).
-- Supports manual controls: started, snooze, resume, status.
+- Supports manual controls: started, b-snooze, resume, status.
 
 ## Required env vars
 
@@ -63,7 +63,7 @@ curl -X POST http://127.0.0.1:8090/control/command \
 
 curl -X POST http://127.0.0.1:8090/control/command \
   -H "Content-Type: application/json" \
-  -d '{"command":"snooze","context":{"discordUserId":"local-user"},"options":{"duration":"1h"}}'
+  -d '{"command":"b-snooze","context":{"discordUserId":"local-user"},"options":{"duration":"1h"}}'
 ```
 
 Command names are configurable via env (`BEEMINDER_COMMAND_*`), so Discord slash mappings can stay outside `discord-hub` and be owned by the Beeminder spoke.

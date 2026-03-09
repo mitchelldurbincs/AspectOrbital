@@ -11,7 +11,7 @@ This file lists the Discord slash commands exposed by `discord-hub` itself and b
 Default command names (all configurable via `BEEMINDER_COMMAND_*` env vars):
 
 - `/started` — pause reminders while you get started.
-- `/snooze` — pause reminders for a duration.
+- `/b-snooze` — pause reminders for a duration.
   - option: `duration` (string, optional)
 - `/resume` — resume reminders immediately.
 - `/status` — show progress and next reminder time.
@@ -22,11 +22,15 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 
 - `/commit` — commit to a task with a deadline.
   - options:
-    - `task` (string, required)
-    - `goal` (string, required)
     - `deadline` (string, required; RFC3339, unix seconds, or duration)
+    - `task` (string, optional; defaults from preset)
+    - `preset` (string, optional; defaults to global defaultPreset)
 - `/proof` — submit proof for your active commitment.
-  - option: `proof` (attachment, required)
+  - options:
+    - `proof` (attachment, optional)
+    - `text` (string, optional)
+- `/a-snooze` — snooze reminders for your active commitment.
+  - option: `duration` (string, optional; example `10m`)
 - `/accountability-status` — show your active commitment.
 - `/cancel` — cancel your active commitment.
 
