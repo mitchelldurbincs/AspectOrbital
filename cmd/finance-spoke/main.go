@@ -23,6 +23,12 @@ import (
 
 const summaryRunTimeout = 30 * time.Second
 
+const (
+	commandCatalogVersion = 1
+	commandCatalogService = "finance-spoke"
+	commandNameStatus     = "finance-status"
+)
+
 func main() {
 	logger := applog.New("finance-spoke")
 	if err := run(logger); err != nil {
@@ -70,6 +76,8 @@ func run(logger *log.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", app.handleHealthz)
 	mux.HandleFunc("/status", app.handleStatus)
+	mux.HandleFunc("/control/commands", app.handleCommands)
+	mux.HandleFunc("/control/command", app.handleCommand)
 	mux.HandleFunc("/run/weekly-summary", app.handleRunWeeklySummary)
 	mux.HandleFunc("/plaid/setup", app.handlePlaidSetupPage)
 	mux.HandleFunc("/plaid/link-token", app.handleCreateLinkToken)
@@ -156,19 +164,7 @@ func (a *financeApp) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
-	nextSchedule := a.scheduler.nextScheduleAfter(now)
-	state := a.state.Snapshot()
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":                "ok",
-		"summaryEnabled":        a.cfg.SummaryEnabled,
-		"notifyChannel":         a.cfg.NotifyTargetChannel,
-		"timezone":              a.cfg.SummaryTimezone,
-		"nextScheduledAt":       nextSchedule.In(a.location),
-		"plaidAccessTokenCount": len(a.cfg.PlaidAccessTokens),
-		"state":                 state,
-	})
+	writeJSON(w, http.StatusOK, a.statusPayload(time.Now()))
 }
 
 func (a *financeApp) handleRunWeeklySummary(w http.ResponseWriter, r *http.Request) {
@@ -290,6 +286,21 @@ func decodeJSONBody(r *http.Request, out any) error {
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	httpjson.WriteJSON(w, statusCode, payload)
+}
+
+func (a *financeApp) statusPayload(now time.Time) map[string]any {
+	nextSchedule := a.scheduler.nextScheduleAfter(now)
+	state := a.state.Snapshot()
+
+	return map[string]any{
+		"status":                "ok",
+		"summaryEnabled":        a.cfg.SummaryEnabled,
+		"notifyChannel":         a.cfg.NotifyTargetChannel,
+		"timezone":              a.cfg.SummaryTimezone,
+		"nextScheduledAt":       nextSchedule.In(a.location),
+		"plaidAccessTokenCount": len(a.cfg.PlaidAccessTokens),
+		"state":                 state,
+	}
 }
 
 const plaidSetupPage = `<!doctype html>

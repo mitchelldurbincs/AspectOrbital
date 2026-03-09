@@ -4,7 +4,7 @@
 
 ## Canonical local port map
 
-| Service | Default bind |
+| Service | Local bind |
 |---|---|
 | `discord-hub` | `127.0.0.1:8080` |
 | `beeminder-spoke` | `127.0.0.1:8090` |
@@ -33,8 +33,8 @@ go run ./cmd/discord-hub
 
 Use these env vars to discover commands from one spoke:
 
-- `SPOKE_COMMANDS_URL` (default `http://127.0.0.1:8090/control/commands`)
-- `SPOKE_COMMAND_URL` (default `http://127.0.0.1:8090/control/command`)
+- `SPOKE_COMMANDS_URL`
+- `SPOKE_COMMAND_URL`
 
 Example:
 
@@ -45,14 +45,14 @@ SPOKE_COMMAND_URL=http://beeminder-spoke:8090/control/command
 
 ### Multi-service configuration (`SPOKE_COMMAND_SERVICES`)
 
-Use `SPOKE_COMMAND_SERVICES` to load commands from multiple spokes. It must be a JSON array with `name`, `commands_url`, and `execute_url` per service.
+Use `SPOKE_COMMAND_SERVICES` to load commands from multiple spokes. It must be a JSON array with `name`, `commandsUrl`, and `executeUrl` per service.
 
 Example with two services:
 
 ```bash
 SPOKE_COMMAND_SERVICES='[
-  {"name":"beeminder-spoke","commands_url":"http://beeminder-spoke:8090/control/commands","execute_url":"http://beeminder-spoke:8090/control/command"},
-  {"name":"finance-spoke","commands_url":"http://finance-spoke:8091/control/commands","execute_url":"http://finance-spoke:8091/control/command"}
+  {"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},
+  {"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"}
 ]'
 ```
 
@@ -60,9 +60,9 @@ Example with three services:
 
 ```bash
 SPOKE_COMMAND_SERVICES='[
-  {"name":"beeminder-spoke","commands_url":"http://beeminder-spoke:8090/control/commands","execute_url":"http://beeminder-spoke:8090/control/command"},
-  {"name":"finance-spoke","commands_url":"http://finance-spoke:8091/control/commands","execute_url":"http://finance-spoke:8091/control/command"},
-  {"name":"kalshi-spoke","commands_url":"http://kalshi-spoke:8092/control/commands","execute_url":"http://kalshi-spoke:8092/control/command"}
+  {"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},
+  {"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},
+  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"}
 ]'
 ```
 

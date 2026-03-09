@@ -4,7 +4,7 @@
 
 ## Canonical local port map
 
-| Service | Default bind |
+| Service | Local bind |
 |---|---|
 | `discord-hub` | `127.0.0.1:8080` |
 | `beeminder-spoke` | `127.0.0.1:8090` |
@@ -21,11 +21,11 @@ It also sends alerts through `discord-hub` using `POST /notify`.
 - Trigger is edge-based: it fires when crossing from below to above.
 - It re-arms only after price drops below the threshold again.
 
-## Safety defaults
+## Safety settings
 
-- `KALSHI_SPOKE_ENABLED=false` by default (monitoring off).
-- `KALSHI_AUTO_SELL_ENABLED=false` by default.
-- `KALSHI_DRY_RUN=true` by default.
+- `KALSHI_SPOKE_ENABLED=false` keeps monitoring off.
+- `KALSHI_AUTO_SELL_ENABLED=false` keeps auto-sell off.
+- `KALSHI_DRY_RUN=true` keeps order submission in dry-run mode.
 
 To actually place orders, all three must be true/false in the right combination:
 
@@ -41,10 +41,10 @@ To actually place orders, all three must be true/false in the right combination:
 
 Other common vars:
 
-- `KALSHI_TRIGGER_YES_BID_DOLLARS` (default `0.6000`)
-- `KALSHI_HUB_NOTIFY_URL` (default `http://127.0.0.1:8080/notify`)
-- `KALSHI_NOTIFY_CHANNEL` (default `kalshi-alerts`)
-- `KALSHI_SUBACCOUNT` (default `0`)
+- `KALSHI_TRIGGER_YES_BID_DOLLARS`
+- `KALSHI_HUB_NOTIFY_URL`
+- `KALSHI_NOTIFY_CHANNEL`
+- `KALSHI_SUBACCOUNT`
 
 ## Local run
 
@@ -60,5 +60,13 @@ cargo run --manifest-path cmd/kalshi-spoke/Cargo.toml
 
 - `GET /healthz`
 - `GET /status`
+- `GET /control/commands`
+- `POST /control/command`
 
-Default bind address: `127.0.0.1:8092`.
+Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
+
+## Discord command catalog
+
+`kalshi-spoke` now exposes a spoke command catalog consumed by `discord-hub`:
+
+- `kalshi-status` — returns current runtime and persisted trigger state.

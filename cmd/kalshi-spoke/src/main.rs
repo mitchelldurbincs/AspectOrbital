@@ -6,7 +6,12 @@ mod state;
 use std::{collections::BTreeMap, io::ErrorKind, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use chrono::{DateTime, Utc};
 use config::{Config, PublicConfig};
 use discord::DiscordClient;
@@ -23,6 +28,10 @@ use tokio::{
 };
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
+
+const COMMAND_CATALOG_VERSION: u8 = 1;
+const COMMAND_CATALOG_SERVICE: &str = "kalshi-spoke";
+const COMMAND_NAME_STATUS: &str = "kalshi-status";
 
 #[derive(Clone)]
 struct AppState {
@@ -57,6 +66,38 @@ struct StatusResponse {
     config: PublicConfig,
     runtime: RuntimeSnapshot,
     persisted: PersistedState,
+}
+
+#[derive(Debug, Serialize)]
+struct CommandCatalogResponse {
+    version: u8,
+    service: &'static str,
+    commands: Vec<CommandDefinition>,
+    #[serde(rename = "commandNames")]
+    command_names: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CommandDefinition {
+    name: &'static str,
+    description: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommandRequest {
+    command: String,
+    #[allow(dead_code)]
+    argument: Option<String>,
+    #[allow(dead_code)]
+    options: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize)]
+struct CommandResponse {
+    status: &'static str,
+    command: String,
+    message: String,
+    data: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,6 +308,8 @@ async fn run_http_server(
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/status", get(status))
+        .route("/control/commands", get(control_commands))
+        .route("/control/command", post(control_command))
         .with_state(app_state);
 
     let listener = TcpListener::bind(&addr)
@@ -289,13 +332,64 @@ async fn healthz() -> Json<serde_json::Value> {
 }
 
 async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
-    Json(StatusResponse {
+    Json(build_status_response(state).await)
+}
+
+async fn control_commands() -> Json<CommandCatalogResponse> {
+    Json(CommandCatalogResponse {
+        version: COMMAND_CATALOG_VERSION,
+        service: COMMAND_CATALOG_SERVICE,
+        commands: vec![CommandDefinition {
+            name: COMMAND_NAME_STATUS,
+            description: "Show Kalshi monitor runtime and persisted state",
+        }],
+        command_names: vec![COMMAND_NAME_STATUS.to_string()],
+    })
+}
+
+async fn control_command(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<CommandRequest>,
+) -> Result<Json<CommandResponse>, (StatusCode, String)> {
+    let command = request.command.trim().to_ascii_lowercase();
+    match command.as_str() {
+        COMMAND_NAME_STATUS => {
+            let status_payload = build_status_response(state).await;
+            let message = format!(
+                "Kalshi status: enabled={}, websocketConnected={}, trackedMarkets={}.",
+                status_payload.config.enabled,
+                status_payload.runtime.ws_connected,
+                status_payload.runtime.markets.len()
+            );
+
+            let data = serde_json::to_value(status_payload)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+            Ok(Json(CommandResponse {
+                status: "ok",
+                command,
+                message,
+                data,
+            }))
+        }
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "unknown command {:?}; valid commands: {}",
+                request.command, COMMAND_NAME_STATUS
+            ),
+        )),
+    }
+}
+
+async fn build_status_response(state: Arc<AppState>) -> StatusResponse {
+    StatusResponse {
         status: "ok",
         started_at: state.started_at,
         config: state.config.clone(),
         runtime: state.runtime.snapshot().await,
         persisted: state.persisted.snapshot().await,
-    })
+    }
 }
 
 async fn run_ws_loop(

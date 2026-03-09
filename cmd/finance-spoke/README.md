@@ -4,7 +4,7 @@
 
 ## Canonical local port map
 
-| Service | Default bind |
+| Service | Local bind |
 |---|---|
 | `discord-hub` | `127.0.0.1:8080` |
 | `beeminder-spoke` | `127.0.0.1:8090` |
@@ -46,10 +46,18 @@ go run ./cmd/finance-spoke
 
 - `GET /healthz`
 - `GET /status`
+- `GET /control/commands`
+- `POST /control/command`
 - `POST /run/weekly-summary`
 - `GET /plaid/setup`
 - `POST /plaid/link-token`
 - `POST /plaid/exchange-public-token`
+
+## Discord command catalog
+
+`finance-spoke` now exposes a spoke command catalog consumed by `discord-hub`:
+
+- `finance-status` — returns scheduler, configuration, and recent summary run state.
 
 Manual trigger example:
 

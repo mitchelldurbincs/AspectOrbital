@@ -58,7 +58,6 @@ Personal infrastructure automation platform built as a modular microservice ecos
 - **Test coverage** — test files exist for discord-hub and config loading, but coverage is limited across spokes
 - **Kubernetes** — stub directory exists under `deployments/kubernetes/` but no active manifests
 - **Accountability spoke** — not yet added to `docker-compose.yml`
-- **Finance and Kalshi spokes** — do not yet expose Discord slash command catalogs (no `/control/commands` endpoint)
 
 ## Quick Start
 

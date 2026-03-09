@@ -30,12 +30,10 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 - `/status` — show your active commitment.
 - `/cancel` — cancel your active commitment.
 
-## `finance-spoke`
+## `finance-spoke` (discovered via `/control/commands`)
 
-- No Discord slash command catalog is exposed today (`finance-spoke` does not provide `/control/commands`).
-- It currently exposes only local HTTP endpoints like `/status` and `/run/weekly-summary`.
+- `/finance-status` — show scheduler configuration and summary state snapshot.
 
-## `kalshi-spoke`
+## `kalshi-spoke` (discovered via `/control/commands`)
 
-- No Discord slash command catalog is exposed today (`kalshi-spoke` does not provide `/control/commands`).
-- It currently exposes local HTTP endpoints like `/healthz` and `/status`.
+- `/kalshi-status` — show monitor runtime state and persisted trigger state.

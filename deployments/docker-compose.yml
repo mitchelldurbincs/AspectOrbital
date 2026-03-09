@@ -17,10 +17,12 @@ services:
       - ../.env
     environment:
       HUB_HTTP_ADDR: 0.0.0.0:8080
-      SPOKE_COMMANDS_URL: http://beeminder-spoke:8090/control/commands
-      SPOKE_COMMAND_URL: http://beeminder-spoke:8090/control/command
+      SPOKE_COMMAND_SERVICES: >-
+        [{"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},{"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},{"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"}]
     depends_on:
       - beeminder-spoke
+      - finance-spoke
+      - kalshi-spoke
     ports:
       - "8080:8080"
     restart: unless-stopped
