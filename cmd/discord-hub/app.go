@@ -36,10 +36,6 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 		return err
 	}
 
-	if cfg.GuildID == "" {
-		logger.Println("DISCORD_GUILD_ID not set; /ping will register globally and can take up to 1 hour to appear")
-	}
-
 	if _, err := upsertPingCommand(session, appID, cfg.GuildID); err != nil {
 		return fmt.Errorf("failed to register /ping command: %w", err)
 	}

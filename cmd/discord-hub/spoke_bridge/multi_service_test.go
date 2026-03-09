@@ -82,6 +82,60 @@ func TestFetchAllCommandsWithRetryRejectsDuplicateCommands(t *testing.T) {
 	}
 }
 
+func TestFetchAllCommandsWithRetryContinuesWhenOneServiceUnavailable(t *testing.T) {
+	alpha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"version":1,"service":"alpha","commands":[{"name":"status","description":"status"}]}`)
+	}))
+	defer alpha.Close()
+
+	bridge := NewBridgeWithServices(
+		log.New(io.Discard, "", 0),
+		alpha.Client(),
+		[]ServiceDefinition{
+			{Name: "alpha", CommandsURL: alpha.URL, ExecuteURL: alpha.URL},
+			{Name: "bravo", CommandsURL: "http://127.0.0.1:1", ExecuteURL: "http://127.0.0.1:1"},
+		},
+		nil,
+		nil,
+	)
+
+	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
+	if err != nil {
+		t.Fatalf("fetchAllCommandsWithRetry() error = %v", err)
+	}
+
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(commands))
+	}
+	if owners["status"] != "alpha" {
+		t.Fatalf("unexpected owners: %#v", owners)
+	}
+	if counts["alpha"] != 1 {
+		t.Fatalf("unexpected per-service counts: %#v", counts)
+	}
+	if _, ok := counts["bravo"]; ok {
+		t.Fatalf("expected unavailable service to be omitted from counts: %#v", counts)
+	}
+}
+
+func TestFetchAllCommandsWithRetryReturnsErrorWhenNoServicesReachable(t *testing.T) {
+	bridge := NewBridgeWithServices(
+		log.New(io.Discard, "", 0),
+		http.DefaultClient,
+		[]ServiceDefinition{{Name: "alpha", CommandsURL: "http://127.0.0.1:1", ExecuteURL: "http://127.0.0.1:1"}},
+		nil,
+		nil,
+	)
+
+	_, _, _, err := bridge.fetchAllCommandsWithRetry()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no spoke command catalogs are currently reachable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 	var alphaCalled, bravoCalled bool
 	alpha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

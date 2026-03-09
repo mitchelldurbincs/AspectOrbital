@@ -9,7 +9,7 @@ import (
 	"personal-infrastructure/pkg/spokecontract"
 )
 
-func normalizeCommandSpecs(input []CommandSpec) []CommandSpec {
+func NormalizeCommandSpecs(input []CommandSpec) []CommandSpec {
 	seen := make(map[string]struct{}, len(input))
 	commands := make([]CommandSpec, 0, len(input))
 
@@ -47,10 +47,6 @@ func normalizeCommandSpecs(input []CommandSpec) []CommandSpec {
 	return commands
 }
 
-func NormalizeCommandSpecs(input []CommandSpec) []CommandSpec {
-	return normalizeCommandSpecs(input)
-}
-
 func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 	seen := make(map[string]struct{}, len(input))
 	options := make([]CommandOptionSpec, 0, len(input))
@@ -67,7 +63,7 @@ func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 			continue
 		}
 
-		optionType := normalizeOptionType(raw.Type)
+		optionType := NormalizeOptionType(raw.Type)
 		if optionType == "" {
 			continue
 		}
@@ -88,12 +84,8 @@ func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
 	return options
 }
 
-func normalizeOptionType(raw string) string {
-	return spokecontract.NormalizeOptionType(raw)
-}
-
 func NormalizeOptionType(raw string) string {
-	return normalizeOptionType(raw)
+	return spokecontract.NormalizeOptionType(raw)
 }
 
 func (b *Bridge) CommandNames() []string {
@@ -119,7 +111,7 @@ func (b *Bridge) OwnsCommand(name string) bool {
 	return ok
 }
 
-func pruneCommandOptions(input map[string]any) map[string]any {
+func PruneCommandOptions(input map[string]any) map[string]any {
 	if len(input) == 0 {
 		return nil
 	}
@@ -161,8 +153,4 @@ func pruneCommandOptions(input map[string]any) map[string]any {
 	}
 
 	return clean
-}
-
-func PruneCommandOptions(input map[string]any) map[string]any {
-	return pruneCommandOptions(input)
 }

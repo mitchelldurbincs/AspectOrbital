@@ -34,7 +34,7 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 
 	request := commandRequest{Command: commandName, Context: commandContext}
 	if len(options) > 0 {
-		request.Options = pruneCommandOptions(options)
+		request.Options = PruneCommandOptions(options)
 	}
 	if err := spokecontract.ValidateCommandRequestSchema(spokecontract.CommandRequest(request)); err != nil {
 		return "", fmt.Errorf("invalid spoke command request: %w", err)
@@ -83,7 +83,7 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 		message = fmt.Sprintf("Command `%s` acknowledged.", commandName)
 	}
 
-	return truncateForDiscord(message), nil
+	return TruncateForDiscord(message), nil
 }
 
 func FormatCommandFailure(err error) string {
@@ -91,5 +91,5 @@ func FormatCommandFailure(err error) string {
 		return ""
 	}
 
-	return truncateForDiscord(commandFailurePrefix + err.Error())
+	return TruncateForDiscord(commandFailurePrefix + err.Error())
 }

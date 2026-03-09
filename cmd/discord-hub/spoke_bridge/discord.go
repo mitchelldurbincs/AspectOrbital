@@ -2,7 +2,7 @@ package spokebridge
 
 import "github.com/bwmarrin/discordgo"
 
-func discordOptionType(optionType string) discordgo.ApplicationCommandOptionType {
+func DiscordOptionType(optionType string) discordgo.ApplicationCommandOptionType {
 	switch optionType {
 	case "integer":
 		return discordgo.ApplicationCommandOptionInteger
@@ -15,10 +15,6 @@ func discordOptionType(optionType string) discordgo.ApplicationCommandOptionType
 	default:
 		return discordgo.ApplicationCommandOptionString
 	}
-}
-
-func DiscordOptionType(optionType string) discordgo.ApplicationCommandOptionType {
-	return discordOptionType(optionType)
 }
 
 func (b *Bridge) BuildDiscordCommands() []*discordgo.ApplicationCommand {
@@ -35,7 +31,7 @@ func (b *Bridge) BuildDiscordCommands() []*discordgo.ApplicationCommand {
 		discordOptions := make([]*discordgo.ApplicationCommandOption, 0, len(spec.Options))
 		for _, option := range spec.Options {
 			discordOptions = append(discordOptions, &discordgo.ApplicationCommandOption{
-				Type:        discordOptionType(option.Type),
+				Type:        DiscordOptionType(option.Type),
 				Name:        option.Name,
 				Description: option.Description,
 				Required:    option.Required,
@@ -52,7 +48,7 @@ func (b *Bridge) BuildDiscordCommands() []*discordgo.ApplicationCommand {
 	return result
 }
 
-func truncateForDiscord(message string) string {
+func TruncateForDiscord(message string) string {
 	if len(message) <= discordResponseCharacterLimit {
 		return message
 	}
@@ -62,8 +58,4 @@ func truncateForDiscord(message string) string {
 	}
 
 	return message[:discordResponseCharacterLimit-3] + "..."
-}
-
-func TruncateForDiscord(message string) string {
-	return truncateForDiscord(message)
 }

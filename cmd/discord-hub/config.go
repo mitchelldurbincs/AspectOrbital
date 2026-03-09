@@ -45,16 +45,6 @@ func loadHubConfig() (hubConfig, error) {
 		return hubConfig{}, errors.New("DISCORD_CRITICAL_MENTION is required")
 	}
 
-	kalshiAlertsChannelID := strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_KALSHI_ALERTS"))
-	if kalshiAlertsChannelID == "" {
-		return hubConfig{}, errors.New("DISCORD_CHANNEL_KALSHI_ALERTS is required")
-	}
-
-	mandarinStreaksChannelID := strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_MANDARIN_STREAKS"))
-	if mandarinStreaksChannelID == "" {
-		return hubConfig{}, errors.New("DISCORD_CHANNEL_MANDARIN_STREAKS is required")
-	}
-
 	spokeCommandsEnabledRaw := strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_ENABLED"))
 	if spokeCommandsEnabledRaw == "" {
 		return hubConfig{}, errors.New("SPOKE_COMMANDS_ENABLED is required")
@@ -78,6 +68,6 @@ func loadHubConfig() (hubConfig, error) {
 		HTTPAddr:        httpAddr,
 		NotifyAuthToken: notifyAuthToken,
 		CriticalMention: criticalMention,
-		ChannelMap:      buildChannelMap(kalshiAlertsChannelID, mandarinStreaksChannelID),
+		ChannelMap:      buildChannelMap(),
 	}, nil
 }

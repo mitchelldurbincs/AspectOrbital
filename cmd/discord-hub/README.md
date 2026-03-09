@@ -58,6 +58,12 @@ Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
 
 ## Notify endpoint
 
+Configure channel routing with `DISCORD_CHANNEL_MAP`:
+
+```bash
+DISCORD_CHANNEL_MAP='kalshi-alerts:1234567890,mandarin-streaks:2345678901'
+```
+
 Send alerts from local services:
 
 ```bash

@@ -76,12 +76,15 @@ func (b *Bridge) fetchAllCommandsWithRetry() (map[string]CommandSpec, map[string
 	allCommands := make(map[string]CommandSpec)
 	owners := make(map[string]string)
 	counts := make(map[string]int)
+	failedServices := 0
 
 	for _, serviceName := range b.serviceOrder {
 		service := b.services[serviceName]
 		commands, err := b.fetchCommandsForServiceWithRetry(service)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("service %q catalog unavailable: %w", service.Name, err)
+			failedServices++
+			b.log.Printf("warning: service %q catalog unavailable: %v", service.Name, err)
+			continue
 		}
 		counts[service.Name] = len(commands)
 
@@ -92,6 +95,13 @@ func (b *Bridge) fetchAllCommandsWithRetry() (map[string]CommandSpec, map[string
 			allCommands[command.Name] = command
 			owners[command.Name] = service.Name
 		}
+	}
+
+	if len(allCommands) == 0 {
+		if failedServices > 0 {
+			return nil, nil, nil, errors.New("no spoke command catalogs are currently reachable")
+		}
+		return nil, nil, nil, errors.New("no spoke commands discovered from configured services")
 	}
 
 	return allCommands, owners, counts, nil
@@ -147,12 +157,12 @@ func (b *Bridge) fetchCommandsForService(ctx context.Context, service ServiceDef
 		return nil, fmt.Errorf("spoke command catalog request failed for service %q (%s): %s", service.Name, resp.Status, strings.TrimSpace(string(body)))
 	}
 
-	commands, err := parseCommandCatalog(body)
+	commands, err := ParseCommandCatalog(body)
 	if err != nil {
 		return nil, err
 	}
 
-	normalized := normalizeCommandSpecs(commands)
+	normalized := NormalizeCommandSpecs(commands)
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("command catalog returned no usable commands for service %q", service.Name)
 	}

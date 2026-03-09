@@ -6,7 +6,7 @@ import (
 	"personal-infrastructure/pkg/spokecontract"
 )
 
-func parseCommandCatalog(body []byte) ([]CommandSpec, error) {
+func ParseCommandCatalog(body []byte) ([]CommandSpec, error) {
 	var catalog CommandCatalog
 	if err := json.Unmarshal(body, &catalog); err != nil {
 		return nil, err
@@ -17,8 +17,4 @@ func parseCommandCatalog(body []byte) ([]CommandSpec, error) {
 	}
 
 	return catalog.Commands, nil
-}
-
-func ParseCommandCatalog(body []byte) ([]CommandSpec, error) {
-	return parseCommandCatalog(body)
 }

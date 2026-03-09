@@ -5,11 +5,8 @@ import (
 	"strings"
 )
 
-func buildChannelMap(kalshiAlertsChannelID, mandarinStreaksChannelID string) map[string]string {
-	channelMap := map[string]string{
-		"kalshi-alerts":    strings.TrimSpace(kalshiAlertsChannelID),
-		"mandarin-streaks": strings.TrimSpace(mandarinStreaksChannelID),
-	}
+func buildChannelMap() map[string]string {
+	channelMap := make(map[string]string)
 
 	extras := strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_MAP"))
 	if extras != "" {
