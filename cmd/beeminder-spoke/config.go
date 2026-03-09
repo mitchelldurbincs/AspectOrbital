@@ -3,50 +3,66 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kelseyhightower/envconfig"
 
 	"personal-infrastructure/pkg/configutil"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
 type config struct {
-	HTTPAddr string
+	HTTPAddr string `envconfig:"BEEMINDER_SPOKE_HTTP_ADDR" required:"true"`
 
-	BeeminderBaseURL   string
-	BeeminderAuthToken string
-	BeeminderUsername  string
-	BeeminderGoalSlugs []string
+	BeeminderBaseURL   string `envconfig:"BEEMINDER_API_BASE_URL" required:"true"`
+	BeeminderAuthToken string `envconfig:"BEEMINDER_AUTH_TOKEN"` // Validated manually to match old logic
+	BeeminderUsername  string `envconfig:"BEEMINDER_USERNAME"`
 
-	HubNotifyURL        string
-	HubNotifyAuthToken  string
-	NotifyTargetChannel string
-	NotifySeverity      string
+	BeeminderGoalSlugsRaw string   `envconfig:"BEEMINDER_GOAL_SLUGS"`
+	BeeminderGoalSlugRaw  string   `envconfig:"BEEMINDER_GOAL_SLUG"`
+	BeeminderGoalSlugs    []string `ignored:"true"`
 
-	PollInterval        time.Duration
-	ReminderInterval    time.Duration
-	ReminderStartHour   int
-	ReminderStartMinute int
-	ReminderSchedule    []reminderScheduleStep
-	HasBedtime          bool
-	BedtimeHour         int
-	BedtimeMinute       int
+	HubNotifyURL        string `envconfig:"DISCORD_HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken  string `envconfig:"DISCORD_HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	NotifyTargetChannel string `envconfig:"BEEMINDER_NOTIFY_CHANNEL" required:"true"`
+	NotifySeverity      string `envconfig:"BEEMINDER_NOTIFY_SEVERITY" required:"true"`
 
-	ActiveGrace      time.Duration
-	StartedSnooze    time.Duration
-	DefaultSnooze    time.Duration
-	MaxSnooze        time.Duration
-	RequireDailyRate bool
+	PollInterval     time.Duration `envconfig:"BEEMINDER_POLL_INTERVAL" required:"true"`
+	ReminderInterval time.Duration `envconfig:"BEEMINDER_REMINDER_INTERVAL" required:"true"`
 
-	HTTPTimeout       time.Duration
-	DatapointsPerPage int
-	MaxDatapointPages int
+	ReminderStartRaw    string `envconfig:"BEEMINDER_REMINDER_START" required:"true"`
+	ReminderStartHour   int    `ignored:"true"`
+	ReminderStartMinute int    `ignored:"true"`
 
-	ActionURLs map[string]string
+	ReminderScheduleRaw string                 `envconfig:"BEEMINDER_REMINDER_SCHEDULE"`
+	ReminderSchedule    []reminderScheduleStep `ignored:"true"`
 
-	Commands controlCommands
+	BedtimeRaw    string `envconfig:"BEEMINDER_BEDTIME"`
+	HasBedtime    bool   `ignored:"true"`
+	BedtimeHour   int    `ignored:"true"`
+	BedtimeMinute int    `ignored:"true"`
+
+	ActiveGrace      time.Duration `envconfig:"BEEMINDER_ACTIVE_GRACE" required:"true"`
+	StartedSnooze    time.Duration `envconfig:"BEEMINDER_STARTED_SNOOZE" required:"true"`
+	DefaultSnooze    time.Duration `envconfig:"BEEMINDER_DEFAULT_SNOOZE" required:"true"`
+	MaxSnooze        time.Duration `envconfig:"BEEMINDER_MAX_SNOOZE" default:"2h"`
+	RequireDailyRate bool          `envconfig:"BEEMINDER_REQUIRE_DAILY_RATE" default:"true"`
+
+	HTTPTimeout       time.Duration `envconfig:"BEEMINDER_HTTP_TIMEOUT" required:"true"`
+	DatapointsPerPage int           `envconfig:"BEEMINDER_DATAPOINTS_PER_PAGE" required:"true"`
+	MaxDatapointPages int           `envconfig:"BEEMINDER_MAX_DATAPOINT_PAGES" required:"true"`
+
+	ActionURLsRaw string            `envconfig:"BEEMINDER_ACTION_URLS"`
+	ActionURLs    map[string]string `ignored:"true"`
+
+	CommandStartedRaw string `envconfig:"BEEMINDER_COMMAND_STARTED"`
+	CommandSnoozeRaw  string `envconfig:"BEEMINDER_COMMAND_SNOOZE"`
+	CommandResumeRaw  string `envconfig:"BEEMINDER_COMMAND_RESUME"`
+	CommandStatusRaw  string `envconfig:"BEEMINDER_COMMAND_STATUS"`
+
+	Commands controlCommands `ignored:"true"`
 }
 
 type controlCommands struct {
@@ -84,129 +100,56 @@ func (c controlCommands) All() []string {
 
 func loadConfig() (config, error) {
 	var cfg config
+	if err := envconfig.Process("", &cfg); err != nil {
+		return config{}, err
+	}
+
+	goalSlugsValue := cfg.BeeminderGoalSlugsRaw
+	if goalSlugsValue == "" {
+		goalSlugsValue = cfg.BeeminderGoalSlugRaw
+	}
 	var err error
-
-	cfg.HTTPAddr, err = configutil.StringEnvRequired("BEEMINDER_SPOKE_HTTP_ADDR")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.BeeminderBaseURL, err = configutil.StringEnvRequired("BEEMINDER_API_BASE_URL")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.BeeminderAuthToken = strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN"))
-	cfg.BeeminderUsername = strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME"))
-	goalSlugsValue, err := configutil.StringEnvRequired("BEEMINDER_GOAL_SLUGS")
-	if err != nil {
-		legacySlug := strings.TrimSpace(os.Getenv("BEEMINDER_GOAL_SLUG"))
-		if legacySlug == "" {
-			return config{}, err
-		}
-		goalSlugsValue = legacySlug
-	}
 	cfg.BeeminderGoalSlugs, err = parseGoalSlugs(goalSlugsValue)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid BEEMINDER_GOAL_SLUGS: %w", err)
 	}
 
-	notifyCfg, err := configutil.LoadNotifyConfig(
-		"DISCORD_HUB_NOTIFY_URL",
-		"DISCORD_HUB_NOTIFY_AUTH_TOKEN",
-		"BEEMINDER_NOTIFY_CHANNEL",
-		"BEEMINDER_NOTIFY_SEVERITY",
-	)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.HubNotifyURL = notifyCfg.URL
-	cfg.HubNotifyAuthToken = notifyCfg.AuthToken
-	cfg.NotifyTargetChannel = notifyCfg.Channel
-	cfg.NotifySeverity = notifyCfg.Severity
-
-	cfg.PollInterval, err = configutil.DurationEnvRequired("BEEMINDER_POLL_INTERVAL")
-	if err != nil {
+	cfg.NotifySeverity = configutil.NormalizeSeverity(cfg.NotifySeverity)
+	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
 		return config{}, err
 	}
 
-	cfg.ReminderInterval, err = configutil.DurationEnvRequired("BEEMINDER_REMINDER_INTERVAL")
+	cfg.ReminderStartHour, cfg.ReminderStartMinute, err = configutil.ParseClockHHMM(cfg.ReminderStartRaw)
 	if err != nil {
-		return config{}, err
+		return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_START: %w", err)
 	}
 
-	reminderScheduleRaw := strings.TrimSpace(os.Getenv("BEEMINDER_REMINDER_SCHEDULE"))
-	if reminderScheduleRaw != "" {
-		cfg.ReminderSchedule, err = parseReminderSchedule(reminderScheduleRaw)
+	if strings.TrimSpace(cfg.ReminderScheduleRaw) != "" {
+		cfg.ReminderSchedule, err = parseReminderSchedule(cfg.ReminderScheduleRaw)
 		if err != nil {
 			return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_SCHEDULE: %w", err)
 		}
 	}
 
-	reminderStart, err := configutil.StringEnvRequired("BEEMINDER_REMINDER_START")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.ReminderStartHour, cfg.ReminderStartMinute, err = configutil.ParseClockHHMM(reminderStart)
-	if err != nil {
-		return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_START: %w", err)
-	}
-
-	cfg.ActiveGrace, err = configutil.DurationEnvRequired("BEEMINDER_ACTIVE_GRACE")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.StartedSnooze, err = configutil.DurationEnvRequired("BEEMINDER_STARTED_SNOOZE")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.DefaultSnooze, err = configutil.DurationEnvRequired("BEEMINDER_DEFAULT_SNOOZE")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.MaxSnooze, err = configutil.DurationEnv("BEEMINDER_MAX_SNOOZE", 2*time.Hour)
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.RequireDailyRate, err = configutil.BoolEnvWithDefaultStrict("BEEMINDER_REQUIRE_DAILY_RATE", true)
-	if err != nil {
-		return config{}, err
-	}
-
-	bedtimeRaw := strings.TrimSpace(os.Getenv("BEEMINDER_BEDTIME"))
-	if bedtimeRaw != "" {
-		cfg.BedtimeHour, cfg.BedtimeMinute, err = configutil.ParseClockHHMM(bedtimeRaw)
+	if strings.TrimSpace(cfg.BedtimeRaw) != "" {
+		cfg.BedtimeHour, cfg.BedtimeMinute, err = configutil.ParseClockHHMM(cfg.BedtimeRaw)
 		if err != nil {
 			return config{}, fmt.Errorf("invalid BEEMINDER_BEDTIME: %w", err)
 		}
 		cfg.HasBedtime = true
 	}
 
-	cfg.HTTPTimeout, err = configutil.DurationEnvRequired("BEEMINDER_HTTP_TIMEOUT")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.DatapointsPerPage, err = configutil.IntEnvRequired("BEEMINDER_DATAPOINTS_PER_PAGE")
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.MaxDatapointPages, err = configutil.IntEnvRequired("BEEMINDER_MAX_DATAPOINT_PAGES")
-	if err != nil {
-		return config{}, err
-	}
-
-	actionURLsRaw := strings.TrimSpace(os.Getenv("BEEMINDER_ACTION_URLS"))
-	cfg.ActionURLs, err = parseActionURLs(actionURLsRaw)
+	cfg.ActionURLs, err = parseActionURLs(cfg.ActionURLsRaw)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid BEEMINDER_ACTION_URLS: %w", err)
 	}
 
-	cfg.Commands = loadControlCommands()
+	cfg.Commands = controlCommands{
+		Started: normalizeCommand(cfg.CommandStartedRaw),
+		Snooze:  normalizeCommand(cfg.CommandSnoozeRaw),
+		Resume:  normalizeCommand(cfg.CommandResumeRaw),
+		Status:  normalizeCommand(cfg.CommandStatusRaw),
+	}
 
 	normalizeConfig(&cfg)
 
@@ -225,22 +168,13 @@ func normalizeConfig(cfg *config) {
 	cfg.BeeminderBaseURL = strings.TrimRight(strings.TrimSpace(cfg.BeeminderBaseURL), "/")
 }
 
-func loadControlCommands() controlCommands {
-	return controlCommands{
-		Started: normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STARTED")),
-		Snooze:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_SNOOZE")),
-		Resume:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_RESUME")),
-		Status:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STATUS")),
-	}
-}
-
 func validateConfig(cfg config) error {
 	var missing []string
 
-	if cfg.BeeminderAuthToken == "" {
+	if strings.TrimSpace(cfg.BeeminderAuthToken) == "" {
 		missing = append(missing, "BEEMINDER_AUTH_TOKEN")
 	}
-	if cfg.BeeminderUsername == "" {
+	if strings.TrimSpace(cfg.BeeminderUsername) == "" {
 		missing = append(missing, "BEEMINDER_USERNAME")
 	}
 	if len(cfg.BeeminderGoalSlugs) == 0 {
@@ -299,7 +233,13 @@ func validateConfig(cfg config) error {
 }
 
 func parseGoalSlugs(raw string) ([]string, error) {
-	parts := configutil.ParseCSV(raw)
+	partsRaw := strings.Split(raw, ",")
+	parts := make([]string, 0, len(partsRaw))
+	for _, p := range partsRaw {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
 	if len(parts) == 0 {
 		return nil, errors.New("must provide at least one goal slug")
 	}

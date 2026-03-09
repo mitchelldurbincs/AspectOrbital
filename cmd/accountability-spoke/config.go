@@ -5,114 +5,59 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kelseyhightower/envconfig"
+
 	"personal-infrastructure/pkg/configutil"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
 type config struct {
-	HTTPAddr           string
-	DBPath             string
-	ExpiryPollInterval time.Duration
-	ExpiryGracePeriod  time.Duration
-	ReminderInterval   time.Duration
-	HubNotifyURL       string
-	HubNotifyAuthToken string
-	NotifyChannel      string
-	NotifySeverity     string
-	PolicyFile         string
-	OpenAIBaseURL      string
-	OpenAIAPIKey       string
-	OpenAIModel        string
-	OpenAITimeout      time.Duration
-	DefaultSnooze      time.Duration
-	MaxSnooze          time.Duration
-	CommitCommandName  string
-	ProofCommandName   string
-	StatusCommandName  string
-	CancelCommandName  string
-	SnoozeCommandName  string
+	HTTPAddr           string        `envconfig:"ACCOUNTABILITY_SPOKE_HTTP_ADDR" required:"true"`
+	DBPath             string        `envconfig:"ACCOUNTABILITY_DB_PATH" required:"true"`
+	ExpiryPollInterval time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL" required:"true"`
+	ExpiryGracePeriod  time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD" required:"true"`
+	ReminderInterval   time.Duration `envconfig:"ACCOUNTABILITY_REMINDER_INTERVAL" required:"true"`
+	HubNotifyURL       string        `envconfig:"ACCOUNTABILITY_HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken string        `envconfig:"ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	NotifyChannel      string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
+	NotifySeverity     string        `envconfig:"ACCOUNTABILITY_NOTIFY_SEVERITY" required:"true"`
+	PolicyFile         string        `envconfig:"ACCOUNTABILITY_POLICY_FILE" required:"true"`
+	OpenAIBaseURL      string        `envconfig:"ACCOUNTABILITY_OPENAI_BASE_URL" default:"https://api.openai.com/v1"`
+	OpenAIAPIKey       string        `envconfig:"ACCOUNTABILITY_OPENAI_API_KEY"`
+	OpenAIModel        string        `envconfig:"ACCOUNTABILITY_OPENAI_MODEL" default:"gpt-4.1-mini"`
+	OpenAITimeout      time.Duration `envconfig:"ACCOUNTABILITY_OPENAI_TIMEOUT" default:"20s"`
+	DefaultSnooze      time.Duration `envconfig:"ACCOUNTABILITY_DEFAULT_SNOOZE" required:"true"`
+	MaxSnooze          time.Duration `envconfig:"ACCOUNTABILITY_MAX_SNOOZE" required:"true"`
+
+	CommitCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_COMMIT" required:"true"`
+	ProofCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_PROOF" required:"true"`
+	StatusCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_STATUS" required:"true"`
+	CancelCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_CANCEL" required:"true"`
+	SnoozeCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_SNOOZE" required:"true"`
+
+	CommitCommandName string `ignored:"true"`
+	ProofCommandName  string `ignored:"true"`
+	StatusCommandName string `ignored:"true"`
+	CancelCommandName string `ignored:"true"`
+	SnoozeCommandName string `ignored:"true"`
 }
 
 func loadConfig() (config, error) {
 	var cfg config
-	var err error
-
-	cfg.HTTPAddr, err = configutil.StringEnvRequired("ACCOUNTABILITY_SPOKE_HTTP_ADDR")
-	if err != nil {
+	if err := envconfig.Process("", &cfg); err != nil {
 		return config{}, err
 	}
 
-	cfg.DBPath, err = configutil.StringEnvRequired("ACCOUNTABILITY_DB_PATH")
-	if err != nil {
+	cfg.NotifySeverity = configutil.NormalizeSeverity(cfg.NotifySeverity)
+	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
 		return config{}, err
 	}
 
-	cfg.ExpiryPollInterval, err = configutil.DurationEnvRequired("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.ExpiryGracePeriod, err = configutil.DurationEnvRequired("ACCOUNTABILITY_EXPIRY_GRACE_PERIOD")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.ReminderInterval, err = configutil.DurationEnvRequired("ACCOUNTABILITY_REMINDER_INTERVAL")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.DefaultSnooze, err = configutil.DurationEnvRequired("ACCOUNTABILITY_DEFAULT_SNOOZE")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.MaxSnooze, err = configutil.DurationEnvRequired("ACCOUNTABILITY_MAX_SNOOZE")
-	if err != nil {
-		return config{}, err
-	}
-	notifyCfg, err := configutil.LoadNotifyConfig(
-		"ACCOUNTABILITY_HUB_NOTIFY_URL",
-		"ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN",
-		"ACCOUNTABILITY_NOTIFY_CHANNEL",
-		"ACCOUNTABILITY_NOTIFY_SEVERITY",
-	)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.HubNotifyURL = notifyCfg.URL
-	cfg.HubNotifyAuthToken = notifyCfg.AuthToken
-	cfg.NotifyChannel = notifyCfg.Channel
-	cfg.NotifySeverity = notifyCfg.Severity
-
-	cfg.PolicyFile, err = configutil.StringEnvRequired("ACCOUNTABILITY_POLICY_FILE")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.OpenAIBaseURL = configutil.StringEnv("ACCOUNTABILITY_OPENAI_BASE_URL", "https://api.openai.com/v1")
-	cfg.OpenAIAPIKey = configutil.StringEnv("ACCOUNTABILITY_OPENAI_API_KEY", "")
-	cfg.OpenAIModel = configutil.StringEnv("ACCOUNTABILITY_OPENAI_MODEL", "gpt-4.1-mini")
-	cfg.OpenAITimeout, err = configutil.DurationEnv("ACCOUNTABILITY_OPENAI_TIMEOUT", 20*time.Second)
-	if err != nil {
-		return config{}, err
-	}
-
-	cfg.CommitCommandName, err = requiredNormalizedCommand("ACCOUNTABILITY_COMMAND_COMMIT")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.ProofCommandName, err = requiredNormalizedCommand("ACCOUNTABILITY_COMMAND_PROOF")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.StatusCommandName, err = requiredNormalizedCommand("ACCOUNTABILITY_COMMAND_STATUS")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.CancelCommandName, err = requiredNormalizedCommand("ACCOUNTABILITY_COMMAND_CANCEL")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.SnoozeCommandName, err = requiredNormalizedCommand("ACCOUNTABILITY_COMMAND_SNOOZE")
-	if err != nil {
-		return config{}, err
-	}
+	cfg.CommitCommandName = spokecontract.NormalizeCommandName(cfg.CommitCommandNameRaw)
+	cfg.ProofCommandName = spokecontract.NormalizeCommandName(cfg.ProofCommandNameRaw)
+	cfg.StatusCommandName = spokecontract.NormalizeCommandName(cfg.StatusCommandNameRaw)
+	cfg.CancelCommandName = spokecontract.NormalizeCommandName(cfg.CancelCommandNameRaw)
+	cfg.SnoozeCommandName = spokecontract.NormalizeCommandName(cfg.SnoozeCommandNameRaw)
 
 	if cfg.ExpiryPollInterval <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL must be positive")
@@ -138,14 +83,6 @@ func loadConfig() (config, error) {
 	if cfg.OpenAITimeout <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_OPENAI_TIMEOUT must be positive")
 	}
+
 	return cfg, nil
-}
-
-func requiredNormalizedCommand(envKey string) (string, error) {
-	value, err := configutil.StringEnvRequired(envKey)
-	if err != nil {
-		return "", err
-	}
-
-	return spokecontract.NormalizeCommandName(value), nil
 }
