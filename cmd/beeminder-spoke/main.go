@@ -11,8 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
-
+	"personal-infrastructure/pkg/appboot"
 	"personal-infrastructure/pkg/hubnotify"
 	"personal-infrastructure/pkg/lifecycle"
 	applog "personal-infrastructure/pkg/logger"
@@ -34,13 +33,7 @@ func main() {
 }
 
 func run(logger *log.Logger) error {
-	for _, envFile := range []string{"cmd/beeminder-spoke/.env", ".env"} {
-		if err := godotenv.Load(envFile); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				logger.Printf("unable to load %s: %v", envFile, err)
-			}
-		}
-	}
+	appboot.LoadEnvFiles(logger, appboot.StandardEnvFiles("cmd/beeminder-spoke")...)
 
 	cfg, err := loadConfig()
 	if err != nil {

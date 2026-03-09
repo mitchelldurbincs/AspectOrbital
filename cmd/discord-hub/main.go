@@ -1,24 +1,14 @@
 package main
 
 import (
-	"errors"
-	"os"
-
-	"github.com/joho/godotenv"
-
+	"personal-infrastructure/pkg/appboot"
 	applog "personal-infrastructure/pkg/logger"
 )
 
 func main() {
 	logger := applog.New("discord-hub")
 
-	for _, envFile := range []string{"cmd/discord-hub/.env", ".env"} {
-		if err := godotenv.Load(envFile); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				logger.Printf("unable to load %s: %v", envFile, err)
-			}
-		}
-	}
+	appboot.LoadEnvFiles(logger, appboot.StandardEnvFiles("cmd/discord-hub")...)
 
 	cfg, err := loadHubConfig()
 	if err != nil {

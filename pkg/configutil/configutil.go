@@ -168,6 +168,90 @@ func ParseClockHHMM(value string) (int, int, error) {
 	return parsed.Hour(), parsed.Minute(), nil
 }
 
+func ParseCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		values = append(values, value)
+	}
+
+	return values
+}
+
+func ParseWeekday(value string) (time.Weekday, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+
+	weekdays := map[string]time.Weekday{
+		"SUN":       time.Sunday,
+		"SUNDAY":    time.Sunday,
+		"MON":       time.Monday,
+		"MONDAY":    time.Monday,
+		"TUE":       time.Tuesday,
+		"TUESDAY":   time.Tuesday,
+		"WED":       time.Wednesday,
+		"WEDNESDAY": time.Wednesday,
+		"THU":       time.Thursday,
+		"THURSDAY":  time.Thursday,
+		"FRI":       time.Friday,
+		"FRIDAY":    time.Friday,
+		"SAT":       time.Saturday,
+		"SATURDAY":  time.Saturday,
+	}
+
+	weekday, ok := weekdays[normalized]
+	if !ok {
+		valid := []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
+		return 0, fmt.Errorf("expected one of %s", strings.Join(valid, ", "))
+	}
+
+	return weekday, nil
+}
+
+type NotifyConfig struct {
+	URL       string
+	AuthToken string
+	Channel   string
+	Severity  string
+}
+
+func LoadNotifyConfig(urlKey, authTokenKey, channelKey, severityKey string) (NotifyConfig, error) {
+	urlValue, err := StringEnvRequired(urlKey)
+	if err != nil {
+		return NotifyConfig{}, err
+	}
+
+	authToken, err := StringEnvRequired(authTokenKey)
+	if err != nil {
+		return NotifyConfig{}, err
+	}
+
+	channel, err := StringEnvRequired(channelKey)
+	if err != nil {
+		return NotifyConfig{}, err
+	}
+
+	severityRaw, err := StringEnvRequired(severityKey)
+	if err != nil {
+		return NotifyConfig{}, err
+	}
+	severity := NormalizeSeverity(severityRaw)
+	if err := ValidateSeverity(severity, DefaultSeverities); err != nil {
+		return NotifyConfig{}, fmt.Errorf("%s %w", severityKey, err)
+	}
+
+	return NotifyConfig{
+		URL:       urlValue,
+		AuthToken: authToken,
+		Channel:   channel,
+		Severity:  severity,
+	}, nil
+}
+
 func NormalizeSeverity(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }

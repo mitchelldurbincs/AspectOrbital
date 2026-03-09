@@ -53,23 +53,19 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
-	cfg.HubNotifyURL, err = configutil.StringEnvRequired("FINANCE_HUB_NOTIFY_URL")
+	notifyCfg, err := configutil.LoadNotifyConfig(
+		"FINANCE_HUB_NOTIFY_URL",
+		"FINANCE_HUB_NOTIFY_AUTH_TOKEN",
+		"FINANCE_NOTIFY_CHANNEL",
+		"FINANCE_NOTIFY_SEVERITY",
+	)
 	if err != nil {
 		return config{}, err
 	}
-	cfg.HubNotifyAuthToken, err = configutil.StringEnvRequired("FINANCE_HUB_NOTIFY_AUTH_TOKEN")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.NotifyTargetChannel, err = configutil.StringEnvRequired("FINANCE_NOTIFY_CHANNEL")
-	if err != nil {
-		return config{}, err
-	}
-	notifySeverity, err := configutil.StringEnvRequired("FINANCE_NOTIFY_SEVERITY")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.NotifySeverity = configutil.NormalizeSeverity(notifySeverity)
+	cfg.HubNotifyURL = notifyCfg.URL
+	cfg.HubNotifyAuthToken = notifyCfg.AuthToken
+	cfg.NotifyTargetChannel = notifyCfg.Channel
+	cfg.NotifySeverity = notifyCfg.Severity
 
 	cfg.SummaryEnabled, err = configutil.BoolEnvRequired("FINANCE_SUMMARY_ENABLED")
 	if err != nil {
@@ -100,7 +96,7 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	weekday, err := parseWeekday(summaryWeekday)
+	weekday, err := configutil.ParseWeekday(summaryWeekday)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid FINANCE_SUMMARY_WEEKDAY: %w", err)
 	}
@@ -152,7 +148,7 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	cfg.PlaidAccessTokens = parseCSVValues(plaidAccessTokens)
+	cfg.PlaidAccessTokens = configutil.ParseCSV(plaidAccessTokens)
 	cfg.PlaidClientName, err = configutil.StringEnvRequired("PLAID_CLIENT_NAME")
 	if err != nil {
 		return config{}, err
@@ -161,7 +157,7 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	cfg.PlaidCountryCodes = parseCSVValues(plaidCountryCodes)
+	cfg.PlaidCountryCodes = configutil.ParseCSV(plaidCountryCodes)
 	cfg.PlaidLanguage, err = configutil.StringEnvRequired("PLAID_LANGUAGE")
 	if err != nil {
 		return config{}, err
@@ -184,15 +180,6 @@ func loadConfig() (config, error) {
 }
 
 func validateConfig(cfg config) error {
-	if cfg.HubNotifyURL == "" {
-		return errors.New("FINANCE_HUB_NOTIFY_URL is required")
-	}
-	if cfg.HubNotifyAuthToken == "" {
-		return errors.New("FINANCE_HUB_NOTIFY_AUTH_TOKEN is required")
-	}
-	if cfg.NotifyTargetChannel == "" {
-		return errors.New("FINANCE_NOTIFY_CHANNEL is required")
-	}
 	if cfg.SummaryLookbackDays <= 0 {
 		return errors.New("FINANCE_SUMMARY_LOOKBACK_DAYS must be positive")
 	}
@@ -204,10 +191,6 @@ func validateConfig(cfg config) error {
 	}
 	if cfg.HTTPTimeout <= 0 {
 		return errors.New("FINANCE_HTTP_TIMEOUT must be positive")
-	}
-
-	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
-		return fmt.Errorf("FINANCE_NOTIFY_SEVERITY %w", err)
 	}
 
 	if _, err := time.LoadLocation(cfg.SummaryTimezone); err != nil {
@@ -233,38 +216,6 @@ func validateConfig(cfg config) error {
 	return nil
 }
 
-func parseWeekday(value string) (time.Weekday, error) {
-	normalized := strings.ToUpper(strings.TrimSpace(value))
-
-	weekdays := map[string]time.Weekday{
-		"SUN":       time.Sunday,
-		"SUNDAY":    time.Sunday,
-		"MON":       time.Monday,
-		"MONDAY":    time.Monday,
-		"TUE":       time.Tuesday,
-		"TUESDAY":   time.Tuesday,
-		"WED":       time.Wednesday,
-		"WEDNESDAY": time.Wednesday,
-		"THU":       time.Thursday,
-		"THURSDAY":  time.Thursday,
-		"FRI":       time.Friday,
-		"FRIDAY":    time.Friday,
-		"SAT":       time.Saturday,
-		"SATURDAY":  time.Saturday,
-	}
-
-	weekday, ok := weekdays[normalized]
-	if !ok {
-		valid := make([]string, 0, 7)
-		for _, day := range []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"} {
-			valid = append(valid, day)
-		}
-		return 0, fmt.Errorf("expected one of %s", strings.Join(valid, ", "))
-	}
-
-	return weekday, nil
-}
-
 func plaidBaseURLForEnvironment(environment string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(environment)) {
 	case "sandbox":
@@ -276,19 +227,4 @@ func plaidBaseURLForEnvironment(environment string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid PLAID_ENV %q; use sandbox, development, or production", environment)
 	}
-}
-
-func parseCSVValues(raw string) []string {
-	parts := strings.Split(raw, ",")
-	values := make([]string, 0, len(parts))
-
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value == "" {
-			continue
-		}
-		values = append(values, value)
-	}
-
-	return values
 }

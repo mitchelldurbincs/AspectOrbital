@@ -95,7 +95,6 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	cfg.BeeminderBaseURL = strings.TrimRight(cfg.BeeminderBaseURL, "/")
 	cfg.BeeminderAuthToken = strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN"))
 	cfg.BeeminderUsername = strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME"))
 	goalSlugsValue, err := configutil.StringEnvRequired("BEEMINDER_GOAL_SLUGS")
@@ -111,26 +110,19 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("invalid BEEMINDER_GOAL_SLUGS: %w", err)
 	}
 
-	cfg.HubNotifyURL, err = configutil.StringEnvRequired("DISCORD_HUB_NOTIFY_URL")
+	notifyCfg, err := configutil.LoadNotifyConfig(
+		"DISCORD_HUB_NOTIFY_URL",
+		"DISCORD_HUB_NOTIFY_AUTH_TOKEN",
+		"BEEMINDER_NOTIFY_CHANNEL",
+		"BEEMINDER_NOTIFY_SEVERITY",
+	)
 	if err != nil {
 		return config{}, err
 	}
-	cfg.HubNotifyURL = strings.TrimSpace(cfg.HubNotifyURL)
-	cfg.HubNotifyAuthToken, err = configutil.StringEnvRequired("DISCORD_HUB_NOTIFY_AUTH_TOKEN")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.HubNotifyAuthToken = strings.TrimSpace(cfg.HubNotifyAuthToken)
-	cfg.NotifyTargetChannel, err = configutil.StringEnvRequired("BEEMINDER_NOTIFY_CHANNEL")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.NotifyTargetChannel = strings.TrimSpace(cfg.NotifyTargetChannel)
-	notifySeverity, err := configutil.StringEnvRequired("BEEMINDER_NOTIFY_SEVERITY")
-	if err != nil {
-		return config{}, err
-	}
-	cfg.NotifySeverity = configutil.NormalizeSeverity(notifySeverity)
+	cfg.HubNotifyURL = notifyCfg.URL
+	cfg.HubNotifyAuthToken = notifyCfg.AuthToken
+	cfg.NotifyTargetChannel = notifyCfg.Channel
+	cfg.NotifySeverity = notifyCfg.Severity
 
 	cfg.PollInterval, err = configutil.DurationEnvRequired("BEEMINDER_POLL_INTERVAL")
 	if err != nil {
@@ -214,18 +206,32 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("invalid BEEMINDER_ACTION_URLS: %w", err)
 	}
 
-	cfg.Commands = controlCommands{
-		Started: normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STARTED")),
-		Snooze:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_SNOOZE")),
-		Resume:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_RESUME")),
-		Status:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STATUS")),
-	}
+	cfg.Commands = loadControlCommands()
+
+	normalizeConfig(&cfg)
 
 	if err := validateConfig(cfg); err != nil {
 		return config{}, err
 	}
 
 	return cfg, nil
+}
+
+func normalizeConfig(cfg *config) {
+	if cfg == nil {
+		return
+	}
+
+	cfg.BeeminderBaseURL = strings.TrimRight(strings.TrimSpace(cfg.BeeminderBaseURL), "/")
+}
+
+func loadControlCommands() controlCommands {
+	return controlCommands{
+		Started: normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STARTED")),
+		Snooze:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_SNOOZE")),
+		Resume:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_RESUME")),
+		Status:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STATUS")),
+	}
 }
 
 func validateConfig(cfg config) error {
@@ -240,16 +246,6 @@ func validateConfig(cfg config) error {
 	if len(cfg.BeeminderGoalSlugs) == 0 {
 		missing = append(missing, "BEEMINDER_GOAL_SLUGS")
 	}
-	if cfg.HubNotifyURL == "" {
-		missing = append(missing, "DISCORD_HUB_NOTIFY_URL")
-	}
-	if cfg.HubNotifyAuthToken == "" {
-		missing = append(missing, "DISCORD_HUB_NOTIFY_AUTH_TOKEN")
-	}
-	if cfg.NotifyTargetChannel == "" {
-		missing = append(missing, "BEEMINDER_NOTIFY_CHANNEL")
-	}
-
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
@@ -288,10 +284,6 @@ func validateConfig(cfg config) error {
 		}
 	}
 
-	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
-		return fmt.Errorf("BEEMINDER_NOTIFY_SEVERITY %w", err)
-	}
-
 	allCommands := cfg.Commands.All()
 	if len(allCommands) < 4 {
 		return errors.New("beeminder command names must be unique and non-empty")
@@ -307,7 +299,7 @@ func validateConfig(cfg config) error {
 }
 
 func parseGoalSlugs(raw string) ([]string, error) {
-	parts := strings.Split(raw, ",")
+	parts := configutil.ParseCSV(raw)
 	if len(parts) == 0 {
 		return nil, errors.New("must provide at least one goal slug")
 	}
@@ -315,11 +307,7 @@ func parseGoalSlugs(raw string) ([]string, error) {
 	seen := make(map[string]struct{}, len(parts))
 	slugs := make([]string, 0, len(parts))
 	for _, part := range parts {
-		slug := strings.TrimSpace(part)
-		if slug == "" {
-			continue
-		}
-
+		slug := part
 		if _, exists := seen[slug]; exists {
 			continue
 		}
