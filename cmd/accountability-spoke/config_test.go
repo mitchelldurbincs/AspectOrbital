@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,9 @@ func clearAccountabilityEnv(t *testing.T) {
 	}
 
 	for _, key := range keys {
-		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("failed to unset %s: %v", key, err)
+		}
 	}
 }
 
