@@ -42,13 +42,14 @@ SPOKE_COMMAND_SERVICES='[
 ]'
 ```
 
-Example with three services:
+Example with four services:
 
 ```bash
 SPOKE_COMMAND_SERVICES='[
   {"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},
   {"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},
-  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"}
+  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"},
+  {"name":"accountability-spoke","commandsUrl":"http://accountability-spoke:8093/control/commands","executeUrl":"http://accountability-spoke:8093/control/command"}
 ]'
 ```
 

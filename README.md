@@ -41,8 +41,8 @@ Personal infrastructure automation platform built as a modular microservice ecos
 ### What's working
 
 - Hub-and-spoke architecture with HTTP-based service discovery and command registration
-- Discord slash commands for Beeminder reminders (`/started`, `/snooze`, `/resume`, `/status`)
-- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/accountability-status`, `/cancel`)
+- Discord slash commands for Beeminder reminders (`/started`, `/b-snooze`, `/resume`, `/status`)
+- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/accountability-status`, `/cancel`, `/a-snooze`)
 - Configurable reminder engine with snooze, grace periods, and active-session detection
 - Plaid integration for recurring subscription detection and weekly summary generation
 - Kalshi WebSocket price streaming with configurable trigger thresholds
@@ -55,7 +55,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 ### In progress / not yet complete
 
 - **CI/CD** — no automated pipeline; tests and builds are run manually
-- **Test coverage** — test files exist for discord-hub and config loading, but coverage is limited across spokes
+- **Test coverage** — coverage is still uneven, but automated tests now exist in `discord-hub`, `beeminder-spoke`, `accountability-spoke`, `finance-spoke`, and shared `pkg/` modules
 - **Kubernetes** — stub directory exists under `deployments/kubernetes/` but no active manifests
 - **Accountability spoke** — not yet added to `docker-compose.yml`
 
@@ -64,14 +64,14 @@ Personal infrastructure automation platform built as a modular microservice ecos
 ```bash
 # 1. Clone and configure
 cp .env.example .env
-# Edit .env with your tokens and channel IDs (see comments in .env.example)
+# Edit .env with your tokens and channel mappings (see comments in .env.example)
 
 # 2. Run with Docker Compose
 cd deployments
 docker compose up --build
 ```
 
-Per-service `.env` files can also be placed in each `cmd/*/` directory for local development. See `.env.example` for the full list of configuration variables.
+Per-service `.env` files can also be placed in each `cmd/*/` directory for local development. The root `.env.example` is a legacy combined file used by `deployments/docker-compose.yml`; prefer each service's local `.env.example` for the most current per-service setup guidance.
 
 ## Documentation
 

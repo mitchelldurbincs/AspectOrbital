@@ -33,7 +33,9 @@ To actually place orders, all three must be true/false in the right combination:
 - `KALSHI_AUTO_SELL_ENABLED=true`
 - `KALSHI_DRY_RUN=false`
 
-## Required env vars (when enabled)
+## Required env vars
+
+`kalshi-spoke` validates these at startup even when `KALSHI_SPOKE_ENABLED=false`, so disabling monitoring does not bypass config validation.
 
 - `KALSHI_ACCESS_KEY`
 - `KALSHI_PRIVATE_KEY_PATH`
