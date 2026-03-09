@@ -27,7 +27,7 @@ pub struct KalshiClient {
     api_base_url: String,
     ws_url: String,
     access_key: String,
-    private_key: RsaPrivateKey,
+    signing_key: BlindedSigningKey<Sha256>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,13 +127,14 @@ impl KalshiClient {
         let private_key = RsaPrivateKey::from_pkcs8_pem(&pem)
             .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))
             .context("failed to parse KALSHI private key (expected PKCS8 or PKCS1 PEM)")?;
+        let signing_key = BlindedSigningKey::<Sha256>::new(private_key);
 
         Ok(Self {
             client,
             api_base_url,
             ws_url,
             access_key,
-            private_key,
+            signing_key,
         })
     }
 
@@ -409,8 +410,9 @@ impl KalshiClient {
             sign_path
         );
 
-        let signing_key = BlindedSigningKey::<Sha256>::new(self.private_key.clone());
-        let signature = signing_key.sign_with_rng(&mut thread_rng(), sign_payload.as_bytes());
+        let signature = self
+            .signing_key
+            .sign_with_rng(&mut thread_rng(), sign_payload.as_bytes());
         Ok(STANDARD.encode(signature.to_vec()))
     }
 }
