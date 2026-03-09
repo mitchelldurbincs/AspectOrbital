@@ -48,6 +48,25 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
+	for key, value := range map[string]string{
+		"ACCOUNTABILITY_SPOKE_HTTP_ADDR":       cfg.HTTPAddr,
+		"ACCOUNTABILITY_DB_PATH":               cfg.DBPath,
+		"ACCOUNTABILITY_HUB_NOTIFY_URL":        cfg.HubNotifyURL,
+		"ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN": cfg.HubNotifyAuthToken,
+		"ACCOUNTABILITY_NOTIFY_CHANNEL":        cfg.NotifyChannel,
+		"ACCOUNTABILITY_NOTIFY_SEVERITY":       cfg.NotifySeverity,
+		"ACCOUNTABILITY_POLICY_FILE":           cfg.PolicyFile,
+		"ACCOUNTABILITY_COMMAND_COMMIT":        cfg.CommitCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_PROOF":         cfg.ProofCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_STATUS":        cfg.StatusCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_CANCEL":        cfg.CancelCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_SNOOZE":        cfg.SnoozeCommandNameRaw,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return config{}, errors.New(key + " is required")
+		}
+	}
+
 	cfg.NotifySeverity = configutil.NormalizeSeverity(cfg.NotifySeverity)
 	if err := configutil.ValidateSeverity(cfg.NotifySeverity, configutil.DefaultSeverities); err != nil {
 		return config{}, err
