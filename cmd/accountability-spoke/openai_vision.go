@@ -17,6 +17,50 @@ type openAIVisionClient struct {
 	httpClient *http.Client
 }
 
+type chatCompletionRequest struct {
+	Model          string                  `json:"model"`
+	Temperature    float64                 `json:"temperature"`
+	ResponseFormat chatCompletionJSONMode  `json:"response_format"`
+	Messages       []chatCompletionMessage `json:"messages"`
+}
+
+type chatCompletionJSONMode struct {
+	Type string `json:"type"`
+}
+
+type chatCompletionMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"`
+}
+
+type chatCompletionContentPart struct {
+	Type     string                  `json:"type"`
+	Text     string                  `json:"text,omitempty"`
+	ImageURL *chatCompletionImageURL `json:"image_url,omitempty"`
+}
+
+type chatCompletionImageURL struct {
+	URL string `json:"url"`
+}
+
+type chatCompletionResponse struct {
+	Choices []chatCompletionChoice `json:"choices"`
+}
+
+type chatCompletionChoice struct {
+	Message chatCompletionMessageResponse `json:"message"`
+}
+
+type chatCompletionMessageResponse struct {
+	Content string `json:"content"`
+}
+
+type openAIClassifierResponse struct {
+	Match      bool    `json:"match"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
+}
+
 func newOpenAIVisionClient(baseURL, apiKey, model string, httpClient *http.Client) *openAIVisionClient {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" || httpClient == nil {
@@ -37,83 +81,118 @@ func (c *openAIVisionClient) EvaluateImage(ctx context.Context, imageURL, prompt
 	if c == nil {
 		return visionEvaluation{}, fmt.Errorf("openai client is not configured")
 	}
+	imageURL, prompt, err := validateEvaluateImageInput(imageURL, prompt)
+	if err != nil {
+		return visionEvaluation{}, err
+	}
+
+	bodyBytes, err := c.buildChatCompletionRequestBody(imageURL, prompt)
+	if err != nil {
+		return visionEvaluation{}, err
+	}
+
+	req, err := c.newChatCompletionRequest(ctx, bodyBytes)
+	if err != nil {
+		return visionEvaluation{}, err
+	}
+
+	respBody, err := c.executeRequest(req)
+	if err != nil {
+		return visionEvaluation{}, err
+	}
+
+	raw, err := parseCompletionContent(respBody)
+	if err != nil {
+		return visionEvaluation{}, err
+	}
+
+	return parseVisionEvaluation(raw)
+}
+
+func validateEvaluateImageInput(imageURL, prompt string) (string, string, error) {
 	imageURL = strings.TrimSpace(imageURL)
 	prompt = strings.TrimSpace(prompt)
 	if imageURL == "" {
-		return visionEvaluation{}, fmt.Errorf("image URL is required")
+		return "", "", fmt.Errorf("image URL is required")
 	}
 	if prompt == "" {
-		return visionEvaluation{}, fmt.Errorf("prompt is required")
+		return "", "", fmt.Errorf("prompt is required")
 	}
+	return imageURL, prompt, nil
+}
 
-	bodyMap := map[string]any{
-		"model":       c.model,
-		"temperature": 0,
-		"response_format": map[string]any{
-			"type": "json_object",
+func (c *openAIVisionClient) buildChatCompletionRequestBody(imageURL, prompt string) ([]byte, error) {
+	body := chatCompletionRequest{
+		Model:       c.model,
+		Temperature: 0,
+		ResponseFormat: chatCompletionJSONMode{
+			Type: "json_object",
 		},
-		"messages": []map[string]any{
+		Messages: []chatCompletionMessage{
 			{
-				"role":    "system",
-				"content": "You are a strict image classifier. Return only JSON with keys: match (boolean), confidence (number 0..1), reason (string).",
+				Role:    "system",
+				Content: "You are a strict image classifier. Return only JSON with keys: match (boolean), confidence (number 0..1), reason (string).",
 			},
 			{
-				"role": "user",
-				"content": []map[string]any{
-					{"type": "text", "text": fmt.Sprintf("Does this image satisfy the following requirement? Requirement: %s", prompt)},
-					{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
+				Role: "user",
+				Content: []chatCompletionContentPart{
+					{Type: "text", Text: fmt.Sprintf("Does this image satisfy the following requirement? Requirement: %s", prompt)},
+					{Type: "image_url", ImageURL: &chatCompletionImageURL{URL: imageURL}},
 				},
 			},
 		},
 	}
 
-	bodyBytes, err := json.Marshal(bodyMap)
+	return json.Marshal(body)
+}
+
+func (c *openAIVisionClient) newChatCompletionRequest(ctx context.Context, body []byte) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return visionEvaluation{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return visionEvaluation{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	return req, nil
+}
 
+func (c *openAIVisionClient) executeRequest(req *http.Request) ([]byte, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return visionEvaluation{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
+
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return visionEvaluation{}, err
+		return nil, err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return visionEvaluation{}, fmt.Errorf("openai API error (%s): %s", resp.Status, strings.TrimSpace(string(respBody)))
+		return nil, fmt.Errorf("openai API error (%s): %s", resp.Status, strings.TrimSpace(string(respBody)))
 	}
 
-	var completion struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
+	return respBody, nil
+}
+
+func parseCompletionContent(respBody []byte) (string, error) {
+	var completion chatCompletionResponse
 	if err := json.Unmarshal(respBody, &completion); err != nil {
-		return visionEvaluation{}, err
+		return "", err
 	}
 	if len(completion.Choices) == 0 {
-		return visionEvaluation{}, fmt.Errorf("openai response contained no choices")
-	}
-	raw := strings.TrimSpace(completion.Choices[0].Message.Content)
-	if raw == "" {
-		return visionEvaluation{}, fmt.Errorf("openai response content was empty")
+		return "", fmt.Errorf("openai response contained no choices")
 	}
 
-	var parsed struct {
-		Match      bool    `json:"match"`
-		Confidence float64 `json:"confidence"`
-		Reason     string  `json:"reason"`
+	raw := strings.TrimSpace(completion.Choices[0].Message.Content)
+	if raw == "" {
+		return "", fmt.Errorf("openai response content was empty")
 	}
+
+	return raw, nil
+}
+
+func parseVisionEvaluation(raw string) (visionEvaluation, error) {
+	var parsed openAIClassifierResponse
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return visionEvaluation{}, fmt.Errorf("failed to parse openai classifier JSON: %w", err)
 	}
