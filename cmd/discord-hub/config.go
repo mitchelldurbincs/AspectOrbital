@@ -25,7 +25,7 @@ func loadHubConfig() (hubConfig, error) {
 
 	httpAddr := strings.TrimSpace(os.Getenv("HUB_HTTP_ADDR"))
 	if httpAddr == "" {
-		httpAddr = defaultHTTPAddr
+		return hubConfig{}, errors.New("HUB_HTTP_ADDR is required")
 	}
 
 	return hubConfig{

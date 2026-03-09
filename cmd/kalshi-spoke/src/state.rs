@@ -64,11 +64,7 @@ impl StateStore {
     }
 
     pub async fn has_market(&self, market_ticker: &str) -> bool {
-        self.state
-            .lock()
-            .await
-            .markets
-            .contains_key(market_ticker)
+        self.state.lock().await.markets.contains_key(market_ticker)
     }
 
     pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>

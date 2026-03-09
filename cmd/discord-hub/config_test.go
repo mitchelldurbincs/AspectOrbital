@@ -39,6 +39,7 @@ func TestLoadHubConfigRequiresDiscordBotToken(t *testing.T) {
 func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "abc123")
+	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
 
 	cfg, err := loadHubConfig()
 	if err != nil {
@@ -50,17 +51,16 @@ func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	}
 }
 
-func TestLoadHubConfigUsesDefaultHTTPAddrWhenUnset(t *testing.T) {
+func TestLoadHubConfigRequiresHTTPAddrWhenUnset(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "Bot token")
 
-	cfg, err := loadHubConfig()
-	if err != nil {
-		t.Fatalf("loadHubConfig returned error: %v", err)
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected error for missing HUB_HTTP_ADDR")
 	}
-
-	if cfg.HTTPAddr != defaultHTTPAddr {
-		t.Fatalf("expected default HTTP address %q, got %q", defaultHTTPAddr, cfg.HTTPAddr)
+	if !strings.Contains(err.Error(), "HUB_HTTP_ADDR is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -39,8 +39,36 @@ func clearFinanceEnv(t *testing.T) {
 	}
 }
 
+func setFinanceRequiredEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("FINANCE_SPOKE_HTTP_ADDR", "127.0.0.1:8091")
+	t.Setenv("FINANCE_HUB_NOTIFY_URL", "http://127.0.0.1:8080/notify")
+	t.Setenv("FINANCE_NOTIFY_CHANNEL", "finance-summary")
+	t.Setenv("FINANCE_NOTIFY_SEVERITY", "info")
+	t.Setenv("FINANCE_SUMMARY_ENABLED", "true")
+	t.Setenv("FINANCE_SUMMARY_TITLE", "Weekly Subscription Summary")
+	t.Setenv("FINANCE_SUMMARY_WEEKDAY", "SUN")
+	t.Setenv("FINANCE_SUMMARY_TIME", "18:00")
+	t.Setenv("FINANCE_SUMMARY_TIMEZONE", "America/New_York")
+	t.Setenv("FINANCE_SUMMARY_LOOKBACK_DAYS", "7")
+	t.Setenv("FINANCE_SUMMARY_SEND_EMPTY", "false")
+	t.Setenv("FINANCE_SUMMARY_MAX_ITEMS", "20")
+	t.Setenv("FINANCE_SUMMARY_POLL_INTERVAL", "1m")
+	t.Setenv("FINANCE_STATE_FILE", "var/finance-spoke/state.json")
+	t.Setenv("PLAID_CLIENT_ID", "cid")
+	t.Setenv("PLAID_SECRET", "secret")
+	t.Setenv("PLAID_ENV", "production")
+	t.Setenv("PLAID_ACCESS_TOKENS", "tok")
+	t.Setenv("PLAID_CLIENT_NAME", "Aspect Orbital Finance")
+	t.Setenv("PLAID_COUNTRY_CODES", "US")
+	t.Setenv("PLAID_LANGUAGE", "en")
+	t.Setenv("PLAID_WEBHOOK_URL", "https://example.com/webhook")
+	t.Setenv("FINANCE_HTTP_TIMEOUT", "15s")
+}
+
 func TestLoadConfigInvalidSummaryEnabledFails(t *testing.T) {
 	clearFinanceEnv(t)
+	setFinanceRequiredEnv(t)
 	t.Setenv("FINANCE_SUMMARY_ENABLED", "sometimes")
 
 	_, err := loadConfig()
@@ -54,6 +82,7 @@ func TestLoadConfigInvalidSummaryEnabledFails(t *testing.T) {
 
 func TestLoadConfigInvalidSummaryLookbackDaysFails(t *testing.T) {
 	clearFinanceEnv(t)
+	setFinanceRequiredEnv(t)
 	t.Setenv("FINANCE_SUMMARY_LOOKBACK_DAYS", "seven")
 
 	_, err := loadConfig()
@@ -67,6 +96,7 @@ func TestLoadConfigInvalidSummaryLookbackDaysFails(t *testing.T) {
 
 func TestLoadConfigInvalidSummarySendEmptyFails(t *testing.T) {
 	clearFinanceEnv(t)
+	setFinanceRequiredEnv(t)
 	t.Setenv("FINANCE_SUMMARY_SEND_EMPTY", "maybe")
 
 	_, err := loadConfig()
@@ -80,6 +110,7 @@ func TestLoadConfigInvalidSummarySendEmptyFails(t *testing.T) {
 
 func TestLoadConfigInvalidSummaryMaxItemsFails(t *testing.T) {
 	clearFinanceEnv(t)
+	setFinanceRequiredEnv(t)
 	t.Setenv("FINANCE_SUMMARY_MAX_ITEMS", "many")
 
 	_, err := loadConfig()
