@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 )
 
 func runHub(logger *log.Logger, cfg hubConfig) error {
@@ -21,7 +23,7 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds
 
-	spokeBridge := discoverSpokeCommandBridge(logger)
+	spokeBridge := spokebridge.Discover(logger)
 	session.AddHandler(interactionHandler(logger, spokeBridge))
 
 	if err := session.Open(); err != nil {
@@ -44,7 +46,7 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 
 	if spokeBridge != nil {
 		if err := upsertSpokeCommands(session, appID, cfg.GuildID, spokeBridge); err != nil {
-			logger.Printf("warning: failed to register beeminder-spoke commands: %v", err)
+			logger.Printf("warning: failed to register spoke commands: %v", err)
 		}
 	}
 
