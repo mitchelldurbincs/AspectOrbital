@@ -1,97 +1,76 @@
 package spokecontract
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
-	"sync"
-
-	"github.com/xeipuuv/gojsonschema"
 )
-
-const contractSchemaID = "https://aspectorbital.local/contracts/spoke-contract-v1.schema.json"
-
-var (
-	contractSchemaJSON     []byte
-	contractSchemaJSONErr  error
-	loadContractSchemaOnce sync.Once
-)
-
-func loadContractSchemaJSON() ([]byte, error) {
-	loadContractSchemaOnce.Do(func() {
-		_, thisFile, _, ok := runtime.Caller(0)
-		if !ok {
-			contractSchemaJSONErr = fmt.Errorf("failed to resolve schema path")
-			return
-		}
-
-		schemaPath := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "contracts", "spoke-contract-v1.schema.json"))
-		contractSchemaJSON, contractSchemaJSONErr = os.ReadFile(schemaPath)
-	})
-
-	if contractSchemaJSONErr != nil {
-		return nil, contractSchemaJSONErr
-	}
-
-	return contractSchemaJSON, nil
-}
-
-func validateAgainstSchemaRef(data any, schemaRef string) error {
-	schemaBytes, err := loadContractSchemaJSON()
-	if err != nil {
-		return fmt.Errorf("failed to load contract schema: %w", err)
-	}
-
-	loader := gojsonschema.NewSchemaLoader()
-	loader.AutoDetect = true
-	if err := loader.AddSchemas(gojsonschema.NewStringLoader(string(schemaBytes))); err != nil {
-		return fmt.Errorf("failed to load root schema: %w", err)
-	}
-
-	compiled, err := loader.Compile(gojsonschema.NewReferenceLoader(contractSchemaID + "#/$defs/" + schemaRef))
-	if err != nil {
-		return fmt.Errorf("failed to compile schema ref %q: %w", schemaRef, err)
-	}
-
-	payload, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-
-	result, err := compiled.Validate(gojsonschema.NewBytesLoader(payload))
-	if err != nil {
-		return err
-	}
-	if result.Valid() {
-		return nil
-	}
-
-	issues := make([]string, 0, len(result.Errors()))
-	for _, issue := range result.Errors() {
-		field := strings.TrimSpace(issue.Field())
-		if field == "(root)" {
-			issues = append(issues, issue.Description())
-			continue
-		}
-		issues = append(issues, fmt.Sprintf("%s: %s", field, issue.Description()))
-	}
-	sort.Strings(issues)
-
-	return fmt.Errorf("schema validation failed for %s: %s", schemaRef, strings.Join(issues, "; "))
-}
 
 func ValidateCatalogSchema(catalog CommandCatalog) error {
-	return validateAgainstSchemaRef(catalog, "commandCatalog")
+	if catalog.Version != CatalogVersion {
+		return fmt.Errorf("version must be %d", CatalogVersion)
+	}
+	if strings.TrimSpace(catalog.Service) == "" {
+		return fmt.Errorf("service is required")
+	}
+	if len(catalog.Commands) == 0 {
+		return fmt.Errorf("commands must include at least one command")
+	}
+
+	for _, command := range catalog.Commands {
+		name := NormalizeCommandName(command.Name)
+		if err := ValidateCommandName(name); err != nil {
+			return fmt.Errorf("invalid command name %q: %w", command.Name, err)
+		}
+		if strings.TrimSpace(command.Description) == "" {
+			return fmt.Errorf("command %q description is required", name)
+		}
+
+		for _, option := range command.Options {
+			oname := NormalizeCommandName(option.Name)
+			if err := ValidateCommandName(oname); err != nil {
+				return fmt.Errorf("invalid option name %q for command %q: %w", option.Name, name, err)
+			}
+
+			otype := NormalizeOptionType(option.Type)
+			if otype == "" {
+				return fmt.Errorf("invalid option type %q for command %q option %q", option.Type, name, oname)
+			}
+			if strings.TrimSpace(option.Description) == "" {
+				return fmt.Errorf("description is required for command %q option %q", name, oname)
+			}
+		}
+	}
+
+	return nil
 }
 
 func ValidateCommandRequestSchema(request CommandRequest) error {
-	return validateAgainstSchemaRef(request, "commandExecuteRequest")
+	if err := ValidateCommandName(NormalizeCommandName(request.Command)); err != nil {
+		return fmt.Errorf("invalid command name %q: %w", request.Command, err)
+	}
+	if strings.TrimSpace(request.Context.DiscordUserID) == "" {
+		return fmt.Errorf("context.discordUserId is required")
+	}
+
+	for key := range request.Options {
+		if err := ValidateCommandName(NormalizeCommandName(key)); err != nil {
+			return fmt.Errorf("invalid option name %q: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 func ValidateCommandResponseSchema(response CommandResponse) error {
-	return validateAgainstSchemaRef(response, "commandExecuteResponse")
+	if strings.TrimSpace(response.Status) == "" {
+		return fmt.Errorf("status is required")
+	}
+	if err := ValidateCommandName(NormalizeCommandName(response.Command)); err != nil {
+		return fmt.Errorf("invalid command name %q: %w", response.Command, err)
+	}
+	if strings.TrimSpace(response.Message) == "" {
+		return fmt.Errorf("message is required")
+	}
+
+	return nil
 }
