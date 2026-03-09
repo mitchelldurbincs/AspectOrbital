@@ -24,10 +24,33 @@ func StringEnv(key, fallback string) string {
 	return value
 }
 
+func StringEnvRequired(key string) (string, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return "", fmt.Errorf("%s is required", key)
+	}
+
+	return raw, nil
+}
+
 func DurationEnv(key string, fallback time.Duration) (time.Duration, error) {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback, nil
+	}
+
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return value, nil
+}
+
+func DurationEnvRequired(key string) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, fmt.Errorf("%s is required", key)
 	}
 
 	value, err := time.ParseDuration(raw)
@@ -80,6 +103,20 @@ func IntEnv(key string, fallback int) (int, error) {
 	return value, nil
 }
 
+func IntEnvRequired(key string) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, fmt.Errorf("%s is required", key)
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return value, nil
+}
+
 func BoolEnvDefault(key string, fallback bool) bool {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -98,6 +135,20 @@ func BoolEnvWithDefaultStrict(key string, fallback bool) (bool, error) {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback, nil
+	}
+
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return value, nil
+}
+
+func BoolEnvRequired(key string) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return false, fmt.Errorf("%s is required", key)
 	}
 
 	value, err := strconv.ParseBool(raw)

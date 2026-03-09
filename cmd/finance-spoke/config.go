@@ -3,29 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"personal-infrastructure/pkg/configutil"
-)
-
-const (
-	defaultFinanceHTTPAddr      = "127.0.0.1:8091"
-	defaultFinanceHubNotifyURL  = "http://127.0.0.1:8080/notify"
-	defaultFinanceChannel       = "finance-summary"
-	defaultFinanceSeverity      = "info"
-	defaultFinanceSummaryTitle  = "Weekly Subscription Summary"
-	defaultSummaryWeekday       = "SUN"
-	defaultSummaryTime          = "18:00"
-	defaultSummaryTimezone      = "America/New_York"
-	defaultSummaryLookbackDays  = 7
-	defaultSummaryPollInterval  = 1 * time.Minute
-	defaultSummaryHTTPTimeout   = 15 * time.Second
-	defaultSummaryMaxItems      = 20
-	defaultFinanceStateFilePath = "var/finance-spoke/state.json"
-	defaultPlaidEnv             = "production"
 )
 
 type config struct {
@@ -65,69 +47,126 @@ func loadConfig() (config, error) {
 	var cfg config
 	var err error
 
-	cfg.HTTPAddr = configutil.StringEnv("FINANCE_SPOKE_HTTP_ADDR", defaultFinanceHTTPAddr)
-
-	cfg.HubNotifyURL = configutil.StringEnv("FINANCE_HUB_NOTIFY_URL", defaultFinanceHubNotifyURL)
-	cfg.NotifyTargetChannel = configutil.StringEnv("FINANCE_NOTIFY_CHANNEL", defaultFinanceChannel)
-	cfg.NotifySeverity = configutil.NormalizeSeverity(configutil.StringEnv("FINANCE_NOTIFY_SEVERITY", defaultFinanceSeverity))
-
-	cfg.SummaryEnabled, err = configutil.BoolEnvWithDefaultStrict("FINANCE_SUMMARY_ENABLED", false)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.SummaryTitle = configutil.StringEnv("FINANCE_SUMMARY_TITLE", defaultFinanceSummaryTitle)
-	cfg.SummaryTimezone = configutil.StringEnv("FINANCE_SUMMARY_TIMEZONE", defaultSummaryTimezone)
-	cfg.SummaryLookbackDays, err = configutil.IntEnvWithDefaultStrict("FINANCE_SUMMARY_LOOKBACK_DAYS", defaultSummaryLookbackDays)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.SummarySendEmpty, err = configutil.BoolEnvWithDefaultStrict("FINANCE_SUMMARY_SEND_EMPTY", false)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.SummaryMaxItems, err = configutil.IntEnvWithDefaultStrict("FINANCE_SUMMARY_MAX_ITEMS", defaultSummaryMaxItems)
+	cfg.HTTPAddr, err = configutil.StringEnvRequired("FINANCE_SPOKE_HTTP_ADDR")
 	if err != nil {
 		return config{}, err
 	}
 
-	weekday, err := parseWeekday(configutil.StringEnv("FINANCE_SUMMARY_WEEKDAY", defaultSummaryWeekday))
+	cfg.HubNotifyURL, err = configutil.StringEnvRequired("FINANCE_HUB_NOTIFY_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifyTargetChannel, err = configutil.StringEnvRequired("FINANCE_NOTIFY_CHANNEL")
+	if err != nil {
+		return config{}, err
+	}
+	notifySeverity, err := configutil.StringEnvRequired("FINANCE_NOTIFY_SEVERITY")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifySeverity = configutil.NormalizeSeverity(notifySeverity)
+
+	cfg.SummaryEnabled, err = configutil.BoolEnvRequired("FINANCE_SUMMARY_ENABLED")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummaryTitle, err = configutil.StringEnvRequired("FINANCE_SUMMARY_TITLE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummaryTimezone, err = configutil.StringEnvRequired("FINANCE_SUMMARY_TIMEZONE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummaryLookbackDays, err = configutil.IntEnvRequired("FINANCE_SUMMARY_LOOKBACK_DAYS")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummarySendEmpty, err = configutil.BoolEnvRequired("FINANCE_SUMMARY_SEND_EMPTY")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.SummaryMaxItems, err = configutil.IntEnvRequired("FINANCE_SUMMARY_MAX_ITEMS")
+	if err != nil {
+		return config{}, err
+	}
+
+	summaryWeekday, err := configutil.StringEnvRequired("FINANCE_SUMMARY_WEEKDAY")
+	if err != nil {
+		return config{}, err
+	}
+	weekday, err := parseWeekday(summaryWeekday)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid FINANCE_SUMMARY_WEEKDAY: %w", err)
 	}
 	cfg.SummaryWeekday = weekday
 
-	hour, minute, err := configutil.ParseClockHHMM(configutil.StringEnv("FINANCE_SUMMARY_TIME", defaultSummaryTime))
+	summaryTime, err := configutil.StringEnvRequired("FINANCE_SUMMARY_TIME")
+	if err != nil {
+		return config{}, err
+	}
+	hour, minute, err := configutil.ParseClockHHMM(summaryTime)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid FINANCE_SUMMARY_TIME: %w", err)
 	}
 	cfg.SummaryHour = hour
 	cfg.SummaryMinute = minute
 
-	cfg.SummaryPollInterval, err = configutil.DurationEnv("FINANCE_SUMMARY_POLL_INTERVAL", defaultSummaryPollInterval)
+	cfg.SummaryPollInterval, err = configutil.DurationEnvRequired("FINANCE_SUMMARY_POLL_INTERVAL")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.StateFilePath = configutil.StringEnv("FINANCE_STATE_FILE", defaultFinanceStateFilePath)
+	cfg.StateFilePath, err = configutil.StringEnvRequired("FINANCE_STATE_FILE")
+	if err != nil {
+		return config{}, err
+	}
 	if !filepath.IsAbs(cfg.StateFilePath) {
 		cfg.StateFilePath = filepath.Clean(cfg.StateFilePath)
 	}
 
-	cfg.PlaidClientID = strings.TrimSpace(os.Getenv("PLAID_CLIENT_ID"))
-	cfg.PlaidSecret = strings.TrimSpace(os.Getenv("PLAID_SECRET"))
-	cfg.PlaidEnvironment = strings.ToLower(strings.TrimSpace(configutil.StringEnv("PLAID_ENV", defaultPlaidEnv)))
+	cfg.PlaidClientID, err = configutil.StringEnvRequired("PLAID_CLIENT_ID")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.PlaidSecret, err = configutil.StringEnvRequired("PLAID_SECRET")
+	if err != nil {
+		return config{}, err
+	}
+	plaidEnv, err := configutil.StringEnvRequired("PLAID_ENV")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.PlaidEnvironment = strings.ToLower(strings.TrimSpace(plaidEnv))
 	cfg.PlaidBaseURL, err = plaidBaseURLForEnvironment(cfg.PlaidEnvironment)
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.PlaidAccessTokens = parseCSVValues(os.Getenv("PLAID_ACCESS_TOKENS"))
-	cfg.PlaidClientName = configutil.StringEnv("PLAID_CLIENT_NAME", "Aspect Orbital Finance")
-	cfg.PlaidCountryCodes = parseCSVValues(configutil.StringEnv("PLAID_COUNTRY_CODES", "US"))
-	cfg.PlaidLanguage = configutil.StringEnv("PLAID_LANGUAGE", "en")
-	cfg.PlaidWebhookURL = strings.TrimSpace(os.Getenv("PLAID_WEBHOOK_URL"))
+	plaidAccessTokens, err := configutil.StringEnvRequired("PLAID_ACCESS_TOKENS")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.PlaidAccessTokens = parseCSVValues(plaidAccessTokens)
+	cfg.PlaidClientName, err = configutil.StringEnvRequired("PLAID_CLIENT_NAME")
+	if err != nil {
+		return config{}, err
+	}
+	plaidCountryCodes, err := configutil.StringEnvRequired("PLAID_COUNTRY_CODES")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.PlaidCountryCodes = parseCSVValues(plaidCountryCodes)
+	cfg.PlaidLanguage, err = configutil.StringEnvRequired("PLAID_LANGUAGE")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.PlaidWebhookURL, err = configutil.StringEnvRequired("PLAID_WEBHOOK_URL")
+	if err != nil {
+		return config{}, err
+	}
 
-	cfg.HTTPTimeout, err = configutil.DurationEnv("FINANCE_HTTP_TIMEOUT", defaultSummaryHTTPTimeout)
+	cfg.HTTPTimeout, err = configutil.DurationEnvRequired("FINANCE_HTTP_TIMEOUT")
 	if err != nil {
 		return config{}, err
 	}
@@ -167,16 +206,8 @@ func validateConfig(cfg config) error {
 		return fmt.Errorf("invalid FINANCE_SUMMARY_TIMEZONE: %w", err)
 	}
 
-	if cfg.SummaryEnabled {
-		if cfg.PlaidClientID == "" {
-			return errors.New("PLAID_CLIENT_ID is required when FINANCE_SUMMARY_ENABLED=true")
-		}
-		if cfg.PlaidSecret == "" {
-			return errors.New("PLAID_SECRET is required when FINANCE_SUMMARY_ENABLED=true")
-		}
-		if len(cfg.PlaidAccessTokens) == 0 {
-			return errors.New("PLAID_ACCESS_TOKENS must include at least one token when FINANCE_SUMMARY_ENABLED=true")
-		}
+	if len(cfg.PlaidAccessTokens) == 0 {
+		return errors.New("PLAID_ACCESS_TOKENS must include at least one token")
 	}
 	if cfg.PlaidClientID != "" && cfg.PlaidSecret == "" {
 		return errors.New("PLAID_SECRET is required when PLAID_CLIENT_ID is set")

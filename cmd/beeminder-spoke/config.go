@@ -11,23 +11,6 @@ import (
 	"personal-infrastructure/pkg/configutil"
 )
 
-const (
-	defaultHTTPAddr          = "127.0.0.1:8090"
-	defaultBeeminderBaseURL  = "https://www.beeminder.com/api/v1"
-	defaultHubNotifyURL      = "http://127.0.0.1:8080/notify"
-	defaultTargetChannel     = "mandarin-streaks"
-	defaultNotifySeverity    = "critical"
-	defaultPollInterval      = 1 * time.Minute
-	defaultReminderInterval  = 5 * time.Minute
-	defaultReminderStart     = "19:00"
-	defaultActiveGrace       = 20 * time.Minute
-	defaultStartedSnooze     = 30 * time.Minute
-	defaultSnoozeDuration    = 30 * time.Minute
-	defaultHTTPTimeout       = 10 * time.Second
-	defaultDatapointsPerPage = 100
-	defaultMaxDatapointPages = 20
-)
-
 type config struct {
 	HTTPAddr string
 
@@ -86,71 +69,92 @@ func (c controlCommands) All() []string {
 
 func loadConfig() (config, error) {
 	var cfg config
+	var err error
 
-	cfg.HTTPAddr = configutil.StringEnv("BEEMINDER_SPOKE_HTTP_ADDR", defaultHTTPAddr)
+	cfg.HTTPAddr, err = configutil.StringEnvRequired("BEEMINDER_SPOKE_HTTP_ADDR")
+	if err != nil {
+		return config{}, err
+	}
 
-	cfg.BeeminderBaseURL = strings.TrimRight(configutil.StringEnv("BEEMINDER_API_BASE_URL", defaultBeeminderBaseURL), "/")
+	cfg.BeeminderBaseURL, err = configutil.StringEnvRequired("BEEMINDER_API_BASE_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.BeeminderBaseURL = strings.TrimRight(cfg.BeeminderBaseURL, "/")
 	cfg.BeeminderAuthToken = strings.TrimSpace(os.Getenv("BEEMINDER_AUTH_TOKEN"))
 	cfg.BeeminderUsername = strings.TrimSpace(os.Getenv("BEEMINDER_USERNAME"))
 	cfg.BeeminderGoalSlug = strings.TrimSpace(os.Getenv("BEEMINDER_GOAL_SLUG"))
 
-	cfg.HubNotifyURL = strings.TrimSpace(configutil.StringEnv("DISCORD_HUB_NOTIFY_URL", defaultHubNotifyURL))
-	cfg.NotifyTargetChannel = strings.TrimSpace(configutil.StringEnv("BEEMINDER_NOTIFY_CHANNEL", defaultTargetChannel))
-	cfg.NotifySeverity = configutil.NormalizeSeverity(configutil.StringEnv("BEEMINDER_NOTIFY_SEVERITY", defaultNotifySeverity))
+	cfg.HubNotifyURL, err = configutil.StringEnvRequired("DISCORD_HUB_NOTIFY_URL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.HubNotifyURL = strings.TrimSpace(cfg.HubNotifyURL)
+	cfg.NotifyTargetChannel, err = configutil.StringEnvRequired("BEEMINDER_NOTIFY_CHANNEL")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifyTargetChannel = strings.TrimSpace(cfg.NotifyTargetChannel)
+	notifySeverity, err := configutil.StringEnvRequired("BEEMINDER_NOTIFY_SEVERITY")
+	if err != nil {
+		return config{}, err
+	}
+	cfg.NotifySeverity = configutil.NormalizeSeverity(notifySeverity)
 
-	var err error
-
-	cfg.PollInterval, err = configutil.DurationEnv("BEEMINDER_POLL_INTERVAL", defaultPollInterval)
+	cfg.PollInterval, err = configutil.DurationEnvRequired("BEEMINDER_POLL_INTERVAL")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.ReminderInterval, err = configutil.DurationEnv("BEEMINDER_REMINDER_INTERVAL", defaultReminderInterval)
+	cfg.ReminderInterval, err = configutil.DurationEnvRequired("BEEMINDER_REMINDER_INTERVAL")
 	if err != nil {
 		return config{}, err
 	}
 
-	reminderStart := configutil.StringEnv("BEEMINDER_REMINDER_START", defaultReminderStart)
+	reminderStart, err := configutil.StringEnvRequired("BEEMINDER_REMINDER_START")
+	if err != nil {
+		return config{}, err
+	}
 	cfg.ReminderStartHour, cfg.ReminderStartMinute, err = configutil.ParseClockHHMM(reminderStart)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid BEEMINDER_REMINDER_START: %w", err)
 	}
 
-	cfg.ActiveGrace, err = configutil.DurationEnv("BEEMINDER_ACTIVE_GRACE", defaultActiveGrace)
+	cfg.ActiveGrace, err = configutil.DurationEnvRequired("BEEMINDER_ACTIVE_GRACE")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.StartedSnooze, err = configutil.DurationEnv("BEEMINDER_STARTED_SNOOZE", defaultStartedSnooze)
+	cfg.StartedSnooze, err = configutil.DurationEnvRequired("BEEMINDER_STARTED_SNOOZE")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.DefaultSnooze, err = configutil.DurationEnv("BEEMINDER_DEFAULT_SNOOZE", defaultSnoozeDuration)
+	cfg.DefaultSnooze, err = configutil.DurationEnvRequired("BEEMINDER_DEFAULT_SNOOZE")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.HTTPTimeout, err = configutil.DurationEnv("BEEMINDER_HTTP_TIMEOUT", defaultHTTPTimeout)
+	cfg.HTTPTimeout, err = configutil.DurationEnvRequired("BEEMINDER_HTTP_TIMEOUT")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.DatapointsPerPage, err = configutil.IntEnv("BEEMINDER_DATAPOINTS_PER_PAGE", defaultDatapointsPerPage)
+	cfg.DatapointsPerPage, err = configutil.IntEnvRequired("BEEMINDER_DATAPOINTS_PER_PAGE")
 	if err != nil {
 		return config{}, err
 	}
 
-	cfg.MaxDatapointPages, err = configutil.IntEnv("BEEMINDER_MAX_DATAPOINT_PAGES", defaultMaxDatapointPages)
+	cfg.MaxDatapointPages, err = configutil.IntEnvRequired("BEEMINDER_MAX_DATAPOINT_PAGES")
 	if err != nil {
 		return config{}, err
 	}
 
 	cfg.Commands = controlCommands{
-		Started: normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_STARTED", "started")),
-		Snooze:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_SNOOZE", "snooze")),
-		Resume:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_RESUME", "resume")),
-		Status:  normalizeCommand(configutil.StringEnv("BEEMINDER_COMMAND_STATUS", "status")),
+		Started: normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STARTED")),
+		Snooze:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_SNOOZE")),
+		Resume:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_RESUME")),
+		Status:  normalizeCommand(os.Getenv("BEEMINDER_COMMAND_STATUS")),
 	}
 
 	if err := validateConfig(cfg); err != nil {

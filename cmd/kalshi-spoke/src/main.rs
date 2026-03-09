@@ -16,7 +16,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use state::{PersistedState, StateStore};
-use tokio::{net::TcpListener, sync::{watch, Mutex}, time::sleep};
+use tokio::{
+    net::TcpListener,
+    sync::{watch, Mutex},
+    time::sleep,
+};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
@@ -476,7 +480,9 @@ async fn handle_ws_text(
                 .msg
                 .msg
                 .unwrap_or_else(|| "unknown websocket error".to_string());
-            runtime.record_ws_error(format!("code={} msg={}", code, message)).await;
+            runtime
+                .record_ws_error(format!("code={} msg={}", code, message))
+                .await;
             warn!("kalshi websocket returned error code {}: {}", code, message);
         }
         _ => {}
@@ -501,15 +507,19 @@ async fn process_ticker_update(
     };
 
     let yes_bid_str = format_decimal_4(yes_bid);
-    runtime.record_ticker_price(market_ticker, yes_bid_str.clone()).await;
+    runtime
+        .record_ticker_price(market_ticker, yes_bid_str.clone())
+        .await;
 
     let is_above = yes_bid >= config.trigger_yes_bid_dollars;
     if !persisted.has_market(market_ticker).await {
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = is_above;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_action = Some("initialized market state".to_string());
-        }).await?;
+        persisted
+            .update_market(market_ticker, |state| {
+                state.was_above_threshold = is_above;
+                state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                state.last_action = Some("initialized market state".to_string());
+            })
+            .await?;
         info!(
             "initialized state for {} at yes_bid={} (above_threshold={})",
             market_ticker, yes_bid_str, is_above
@@ -541,13 +551,15 @@ async fn process_ticker_update(
             "trigger fired (auto-sell disabled)".to_string()
         };
 
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = true;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_triggered_at = Some(Utc::now());
-            state.last_client_order_id = client_order_id.clone();
-            state.last_action = Some(action_summary.clone());
-        }).await?;
+        persisted
+            .update_market(market_ticker, |state| {
+                state.was_above_threshold = true;
+                state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                state.last_triggered_at = Some(Utc::now());
+                state.last_client_order_id = client_order_id.clone();
+                state.last_action = Some(action_summary.clone());
+            })
+            .await?;
         return Ok(());
     }
 
@@ -562,11 +574,13 @@ async fn process_ticker_update(
             warn!("failed to deliver re-armed alert to discord-hub: {err:#}");
         }
 
-        persisted.update_market(market_ticker, |state| {
-            state.was_above_threshold = false;
-            state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-            state.last_action = Some("trigger re-armed".to_string());
-        }).await?;
+        persisted
+            .update_market(market_ticker, |state| {
+                state.was_above_threshold = false;
+                state.last_yes_bid_dollars = Some(yes_bid_str.clone());
+                state.last_action = Some("trigger re-armed".to_string());
+            })
+            .await?;
     }
 
     Ok(())
