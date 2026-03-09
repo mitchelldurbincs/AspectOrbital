@@ -117,13 +117,18 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	}
 
 	var messages []string
-	prev := respondEphemeralFunc
-	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+	prevDefer := deferEphemeralFunc
+	deferEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction) error {
+		return nil
+	}
+	prevFollowup := followupEphemeralFunc
+	followupEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
 		messages = append(messages, message)
 		return nil
 	}
 	t.Cleanup(func() {
-		respondEphemeralFunc = prev
+		deferEphemeralFunc = prevDefer
+		followupEphemeralFunc = prevFollowup
 	})
 
 	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)
@@ -179,13 +184,18 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	}
 
 	var messages []string
-	prev := respondEphemeralFunc
-	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+	prevDefer := deferEphemeralFunc
+	deferEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction) error {
+		return nil
+	}
+	prevFollowup := followupEphemeralFunc
+	followupEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
 		messages = append(messages, message)
 		return nil
 	}
 	t.Cleanup(func() {
-		respondEphemeralFunc = prev
+		deferEphemeralFunc = prevDefer
+		followupEphemeralFunc = prevFollowup
 	})
 
 	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)

@@ -10,6 +10,8 @@ import (
 )
 
 var respondEphemeralFunc = respondEphemeral
+var deferEphemeralFunc = deferEphemeral
+var followupEphemeralFunc = followupEphemeral
 
 func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -35,22 +37,45 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokeCommandBridge) fun
 
 		options := interactionOptionValues(commandData.Options)
 
+		if err := deferEphemeralFunc(s, i.Interaction); err != nil {
+			logger.Printf("failed to defer /%s response: %v", commandData.Name, err)
+			return
+		}
+
 		execCtx, cancel := context.WithTimeout(context.Background(), spokeCommandHTTPTimeout)
 		defer cancel()
 
 		message, err := spokeBridge.ExecuteCommand(execCtx, commandData.Name, options)
 		if err != nil {
 			logger.Printf("spoke command %q failed: %v", commandData.Name, err)
-			if respondErr := respondEphemeralFunc(s, i.Interaction, formatSpokeCommandFailure(err)); respondErr != nil {
+			if respondErr := followupEphemeralFunc(s, i.Interaction, formatSpokeCommandFailure(err)); respondErr != nil {
 				logger.Printf("failed to send spoke command error response: %v", respondErr)
 			}
 			return
 		}
 
-		if err := respondEphemeralFunc(s, i.Interaction, message); err != nil {
+		if err := followupEphemeralFunc(s, i.Interaction, message); err != nil {
 			logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
 		}
 	}
+}
+
+func deferEphemeral(session *discordgo.Session, interaction *discordgo.Interaction) error {
+	return session.InteractionRespond(interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
+	})
+}
+
+func followupEphemeral(session *discordgo.Session, interaction *discordgo.Interaction, message string) error {
+	_, err := session.FollowupMessageCreate(interaction, true, &discordgo.WebhookParams{
+		Content: message,
+		Flags:   discordgo.MessageFlagsEphemeral,
+	})
+
+	return err
 }
 
 func respondEphemeral(session *discordgo.Session, interaction *discordgo.Interaction, message string) error {
