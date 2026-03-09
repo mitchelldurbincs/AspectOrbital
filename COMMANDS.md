@@ -37,3 +37,4 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 ## `kalshi-spoke` (discovered via `/control/commands`)
 
 - `/kalshi-status` — show monitor runtime state and persisted trigger state.
+- `/kalshi-positions` — show YES/NO contract exposure with market titles and tickers.

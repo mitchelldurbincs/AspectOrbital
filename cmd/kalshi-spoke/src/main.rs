@@ -3,7 +3,13 @@ mod discord;
 mod kalshi;
 mod state;
 
-use std::{collections::BTreeMap, io::ErrorKind, str::FromStr, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::ErrorKind,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -16,7 +22,7 @@ use chrono::{DateTime, Utc};
 use config::{Config, PublicConfig};
 use discord::DiscordClient;
 use futures_util::{SinkExt, StreamExt};
-use kalshi::KalshiClient;
+use kalshi::{KalshiClient, MarketDetails, MarketPositionSnapshot};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,13 +38,29 @@ use tracing::{error, info, warn};
 const COMMAND_CATALOG_VERSION: u8 = 1;
 const COMMAND_CATALOG_SERVICE: &str = "kalshi-spoke";
 const COMMAND_NAME_STATUS: &str = "kalshi-status";
+const COMMAND_NAME_POSITIONS: &str = "kalshi-positions";
+const COMMAND_MESSAGE_MAX_CHARS: usize = 1800;
+const MARKET_DETAILS_CACHE_TTL: Duration = Duration::from_secs(600);
 
 #[derive(Clone)]
 struct AppState {
     started_at: DateTime<Utc>,
     config: PublicConfig,
+    kalshi: Arc<KalshiClient>,
+    market_details_cache: Arc<MarketDetailsCache>,
     runtime: Arc<RuntimeState>,
     persisted: Arc<StateStore>,
+}
+
+struct MarketDetailsCache {
+    ttl: Duration,
+    entries: Mutex<BTreeMap<String, CachedMarketDetails>>,
+}
+
+#[derive(Clone)]
+struct CachedMarketDetails {
+    fetched_at: DateTime<Utc>,
+    details: MarketDetails,
 }
 
 struct RuntimeState {
@@ -109,6 +131,26 @@ struct CommandResponse {
     data: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
+struct PositionsSummary {
+    subaccount: u32,
+    yes_contracts: String,
+    no_contracts: String,
+    yes_markets: usize,
+    no_markets: usize,
+    markets: Vec<MarketPositionView>,
+}
+
+#[derive(Debug, Serialize)]
+struct MarketPositionView {
+    ticker: String,
+    event_ticker: Option<String>,
+    title: Option<String>,
+    prompt: Option<String>,
+    side: &'static str,
+    contracts: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct TickerEnvelope {
     msg: TickerPayload,
@@ -177,6 +219,43 @@ impl RuntimeState {
     }
 }
 
+impl MarketDetailsCache {
+    fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            entries: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    async fn get(&self, ticker: &str) -> Option<MarketDetails> {
+        let now = Utc::now();
+        let guard = self.entries.lock().await;
+        let entry = guard.get(ticker)?;
+
+        let age = now.signed_duration_since(entry.fetched_at);
+        if age.num_seconds() < 0 || age.num_seconds() as u64 > self.ttl.as_secs() {
+            return None;
+        }
+
+        Some(entry.details.clone())
+    }
+
+    async fn put(&self, details: MarketDetails) {
+        let key = details.ticker.trim().to_string();
+        if key.is_empty() {
+            return;
+        }
+
+        self.entries.lock().await.insert(
+            key,
+            CachedMarketDetails {
+                fetched_at: Utc::now(),
+                details,
+            },
+        );
+    }
+}
+
 impl TickerPayload {
     fn yes_bid_decimal(&self) -> Result<Option<Decimal>> {
         if let Some(raw) = self.yes_bid_dollars.as_deref() {
@@ -228,9 +307,19 @@ async fn main() -> Result<()> {
         config.notify_severity.clone(),
     ));
 
+    let kalshi = Arc::new(KalshiClient::new(
+        http_client.clone(),
+        config.kalshi_api_base_url.clone(),
+        config.kalshi_ws_url.clone(),
+        config.kalshi_access_key.clone(),
+        &config.kalshi_private_key_path,
+    )?);
+
     let app_state = Arc::new(AppState {
         started_at: Utc::now(),
         config: config.public(),
+        kalshi: kalshi.clone(),
+        market_details_cache: Arc::new(MarketDetailsCache::new(MARKET_DETAILS_CACHE_TTL)),
         runtime: runtime.clone(),
         persisted: persisted.clone(),
     });
@@ -244,13 +333,7 @@ async fn main() -> Result<()> {
     ));
 
     let ws_task = if config.enabled {
-        let kalshi = Arc::new(KalshiClient::new(
-            http_client,
-            config.kalshi_api_base_url.clone(),
-            config.kalshi_ws_url.clone(),
-            config.kalshi_access_key.clone(),
-            &config.kalshi_private_key_path,
-        )?);
+        let kalshi = kalshi.clone();
 
         let online_message = format!(
             "kalshi-spoke online: tickers={} threshold={} auto_sell={} dry_run={} subaccount={}",
@@ -348,11 +431,20 @@ async fn control_commands() -> Json<CommandCatalogResponse> {
     Json(CommandCatalogResponse {
         version: COMMAND_CATALOG_VERSION,
         service: COMMAND_CATALOG_SERVICE,
-        commands: vec![CommandDefinition {
-            name: COMMAND_NAME_STATUS,
-            description: "Show Kalshi monitor runtime and persisted state",
-        }],
-        command_names: vec![COMMAND_NAME_STATUS.to_string()],
+        commands: vec![
+            CommandDefinition {
+                name: COMMAND_NAME_STATUS,
+                description: "Show Kalshi monitor runtime and persisted state",
+            },
+            CommandDefinition {
+                name: COMMAND_NAME_POSITIONS,
+                description: "Show YES and NO contract exposure by market",
+            },
+        ],
+        command_names: vec![
+            COMMAND_NAME_STATUS.to_string(),
+            COMMAND_NAME_POSITIONS.to_string(),
+        ],
     })
 }
 
@@ -388,14 +480,210 @@ async fn control_command(
                 data,
             }))
         }
+        COMMAND_NAME_POSITIONS => {
+            let summary = build_positions_summary(state)
+                .await
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+            let message = build_positions_message(&summary);
+
+            let data = serde_json::to_value(summary)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+            Ok(Json(CommandResponse {
+                status: "ok",
+                command,
+                message,
+                data,
+            }))
+        }
         _ => Err((
             StatusCode::BAD_REQUEST,
             format!(
-                "unknown command {:?}; valid commands: {}",
-                request.command, COMMAND_NAME_STATUS
+                "unknown command {:?}; valid commands: {}, {}",
+                request.command, COMMAND_NAME_STATUS, COMMAND_NAME_POSITIONS
             ),
         )),
     }
+}
+
+async fn build_positions_summary(state: Arc<AppState>) -> Result<PositionsSummary> {
+    let positions = state
+        .kalshi
+        .fetch_market_positions(state.config.subaccount)
+        .await
+        .context("failed to load market positions from Kalshi")?;
+
+    let details_by_ticker = resolve_market_details(state.as_ref(), &positions).await;
+
+    let mut yes_total = Decimal::ZERO;
+    let mut no_total = Decimal::ZERO;
+    let mut yes_markets = 0usize;
+    let mut no_markets = 0usize;
+    let mut markets = Vec::new();
+
+    for position in positions {
+        if position.position_fp == Decimal::ZERO {
+            continue;
+        }
+
+        let side = if position.position_fp > Decimal::ZERO {
+            yes_total += position.position_fp;
+            yes_markets += 1;
+            "YES"
+        } else {
+            no_total += position.position_fp.abs();
+            no_markets += 1;
+            "NO"
+        };
+
+        let details = details_by_ticker.get(&position.ticker);
+        let prompt = details.and_then(|entry| {
+            let text = if side == "YES" {
+                entry.yes_sub_title.trim()
+            } else {
+                entry.no_sub_title.trim()
+            };
+
+            if text.is_empty() {
+                None
+            } else {
+                Some(text.to_string())
+            }
+        });
+
+        markets.push(MarketPositionView {
+            ticker: position.ticker.clone(),
+            event_ticker: details.map(|entry| entry.event_ticker.clone()),
+            title: details.and_then(|entry| {
+                let title = entry.title.trim();
+                if title.is_empty() {
+                    None
+                } else {
+                    Some(title.to_string())
+                }
+            }),
+            prompt,
+            side,
+            contracts: format_decimal_2(position.position_fp.abs()),
+        });
+    }
+
+    markets.sort_by(|left, right| {
+        left.side
+            .cmp(right.side)
+            .then_with(|| left.ticker.cmp(&right.ticker))
+    });
+
+    Ok(PositionsSummary {
+        subaccount: state.config.subaccount,
+        yes_contracts: format_decimal_2(yes_total),
+        no_contracts: format_decimal_2(no_total),
+        yes_markets,
+        no_markets,
+        markets,
+    })
+}
+
+fn build_positions_message(summary: &PositionsSummary) -> String {
+    if summary.markets.is_empty() {
+        return format!(
+            "Kalshi positions (subaccount {}): no open YES/NO contracts.",
+            summary.subaccount
+        );
+    }
+
+    let mut lines = vec![format!(
+        "Kalshi positions (subaccount {})",
+        summary.subaccount
+    )];
+    lines.push(format!(
+        "Totals: YES {} | NO {} | markets {}/{}",
+        summary.yes_contracts, summary.no_contracts, summary.yes_markets, summary.no_markets
+    ));
+
+    let max_markets = 6usize;
+    for (index, market) in summary.markets.iter().take(max_markets).enumerate() {
+        lines.extend(format_market_lines(index + 1, market));
+    }
+
+    if summary.markets.len() > max_markets {
+        lines.push(format!(
+            "... and {} more position(s)",
+            summary.markets.len() - max_markets
+        ));
+    }
+
+    truncate_message(lines.join("\n"), COMMAND_MESSAGE_MAX_CHARS)
+}
+
+fn format_market_lines(index: usize, market: &MarketPositionView) -> Vec<String> {
+    let title = market
+        .title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("(title unavailable)");
+
+    let mut lines = vec![format!(
+        "{}. [{} {}] {}",
+        index, market.side, market.contracts, title
+    )];
+
+    lines.push(format!("   ticker: {}", market.ticker));
+
+    if let Some(event_ticker) = market.event_ticker.as_deref() {
+        lines.push(format!("   event: {}", event_ticker));
+    }
+
+    if let Some(prompt) = market.prompt.as_deref() {
+        if !prompt.trim().is_empty() {
+            lines.push(format!("   prompt: {}", prompt));
+        }
+    }
+
+    lines
+}
+
+fn truncate_message(input: String, limit: usize) -> String {
+    if input.chars().count() <= limit {
+        return input;
+    }
+
+    let mut truncated: String = input.chars().take(limit.saturating_sub(1)).collect();
+    truncated.push('…');
+    truncated
+}
+
+async fn resolve_market_details(
+    state: &AppState,
+    positions: &[MarketPositionSnapshot],
+) -> BTreeMap<String, MarketDetails> {
+    let mut tickers = BTreeSet::new();
+    for position in positions {
+        let ticker = position.ticker.trim();
+        if !ticker.is_empty() {
+            tickers.insert(ticker.to_string());
+        }
+    }
+
+    let mut details = BTreeMap::new();
+    for ticker in tickers {
+        if let Some(cached) = state.market_details_cache.get(&ticker).await {
+            details.insert(ticker, cached);
+            continue;
+        }
+
+        match state.kalshi.fetch_market_details(&ticker).await {
+            Ok(fetched) => {
+                state.market_details_cache.put(fetched.clone()).await;
+                details.insert(ticker, fetched);
+            }
+            Err(err) => {
+                warn!("failed to fetch market details for {}: {err:#}", ticker);
+            }
+        }
+    }
+
+    details
 }
 
 async fn build_status_response(state: Arc<AppState>) -> StatusResponse {

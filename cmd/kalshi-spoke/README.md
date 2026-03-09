@@ -72,3 +72,4 @@ Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
 `kalshi-spoke` now exposes a spoke command catalog consumed by `discord-hub`:
 
 - `kalshi-status` — returns current runtime and persisted trigger state.
+- `kalshi-positions` — returns YES/NO contract exposure summary with market titles, prompts, and tickers.

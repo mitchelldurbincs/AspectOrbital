@@ -38,8 +38,25 @@ pub struct CreatedOrder {
     pub remaining_count_fp: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MarketPositionSnapshot {
+    pub ticker: String,
+    pub position_fp: Decimal,
+}
+
+#[derive(Debug, Clone)]
+pub struct MarketDetails {
+    pub ticker: String,
+    pub event_ticker: String,
+    pub title: String,
+    pub yes_sub_title: String,
+    pub no_sub_title: String,
+}
+
 #[derive(Deserialize)]
 struct GetPositionsResponse {
+    #[serde(default)]
+    cursor: Option<String>,
     #[serde(default)]
     market_positions: Vec<MarketPosition>,
 }
@@ -76,6 +93,20 @@ struct CreateOrderOrder {
     fill_count_fp: Option<String>,
     #[serde(default)]
     remaining_count_fp: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GetMarketResponse {
+    market: MarketResponse,
+}
+
+#[derive(Deserialize)]
+struct MarketResponse {
+    ticker: String,
+    event_ticker: String,
+    title: String,
+    yes_sub_title: String,
+    no_sub_title: String,
 }
 
 impl KalshiClient {
@@ -174,6 +205,84 @@ impl KalshiClient {
         })?;
 
         Ok(value)
+    }
+
+    pub async fn fetch_market_positions(
+        &self,
+        subaccount: u32,
+    ) -> Result<Vec<MarketPositionSnapshot>> {
+        let mut cursor: Option<String> = None;
+        let mut positions = Vec::new();
+
+        loop {
+            let mut query = vec![
+                ("subaccount", subaccount.to_string()),
+                ("count_filter", "position".to_string()),
+                ("limit", "1000".to_string()),
+            ];
+            if let Some(value) = cursor.as_deref() {
+                query.push(("cursor", value.to_string()));
+            }
+
+            let response: GetPositionsResponse =
+                self.authed_get_json("/portfolio/positions", &query).await?;
+
+            for raw in response.market_positions {
+                let ticker = raw.ticker.trim();
+                if ticker.is_empty() {
+                    continue;
+                }
+
+                let position_fp = Decimal::from_str(raw.position_fp.trim()).with_context(|| {
+                    format!(
+                        "failed to parse position_fp {:?} for market {}",
+                        raw.position_fp, raw.ticker
+                    )
+                })?;
+
+                if position_fp == Decimal::ZERO {
+                    continue;
+                }
+
+                positions.push(MarketPositionSnapshot {
+                    ticker: ticker.to_string(),
+                    position_fp,
+                });
+            }
+
+            let next_cursor = response
+                .cursor
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+
+            if next_cursor.is_none() {
+                break;
+            }
+
+            cursor = next_cursor;
+        }
+
+        Ok(positions)
+    }
+
+    pub async fn fetch_market_details(&self, market_ticker: &str) -> Result<MarketDetails> {
+        let ticker = market_ticker.trim();
+        if ticker.is_empty() {
+            bail!("market ticker is required");
+        }
+
+        let path = format!("/markets/{}", ticker);
+        let response: GetMarketResponse = self.authed_get_json(&path, &[]).await?;
+
+        Ok(MarketDetails {
+            ticker: response.market.ticker.trim().to_string(),
+            event_ticker: response.market.event_ticker.trim().to_string(),
+            title: response.market.title.trim().to_string(),
+            yes_sub_title: response.market.yes_sub_title.trim().to_string(),
+            no_sub_title: response.market.no_sub_title.trim().to_string(),
+        })
     }
 
     pub async fn create_reduce_only_sell_order(
