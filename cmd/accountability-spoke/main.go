@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"personal-infrastructure/pkg/accountability"
 	"personal-infrastructure/pkg/beeminder"
 	"personal-infrastructure/pkg/lifecycle"
@@ -25,6 +27,21 @@ const (
 func main() {
 	cfg := loadConfig()
 	logger := log.New(os.Stdout, "accountability-spoke ", log.LstdFlags|log.Lmicroseconds)
+	if err := run(logger); err != nil {
+		logger.Printf("accountability-spoke exiting: %v", err)
+	}
+}
+
+func run(logger *log.Logger) error {
+	for _, envFile := range []string{"cmd/accountability-spoke/.env", ".env"} {
+		if err := godotenv.Load(envFile); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				logger.Printf("unable to load %s: %v", envFile, err)
+			}
+		}
+	}
+
+	cfg := loadConfig()
 	warnOnKnownSpokePortCollisions(logger)
 
 	if err := accountability.Bootstrap(context.Background(), cfg.DBPath); err != nil {
