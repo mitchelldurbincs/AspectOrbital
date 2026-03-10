@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
@@ -10,7 +10,7 @@ COPY pkg ./pkg
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/beeminder-spoke ./cmd/beeminder-spoke
 
-FROM alpine:3.21
+FROM alpine:3.23
 
 RUN addgroup -S app && adduser -S app -G app
 

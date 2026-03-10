@@ -1,4 +1,4 @@
-FROM rust:1.85-alpine AS builder
+FROM rust:1.94-alpine AS builder
 
 WORKDIR /src
 
@@ -6,7 +6,7 @@ COPY cmd/kalshi-spoke ./cmd/kalshi-spoke
 
 RUN cargo build --release --manifest-path cmd/kalshi-spoke/Cargo.toml
 
-FROM alpine:3.21
+FROM alpine:3.23
 
 RUN addgroup -S app && adduser -S app -G app
 
