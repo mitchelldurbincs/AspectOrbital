@@ -1,12 +1,14 @@
 use std::{
     collections::BTreeMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -81,25 +83,120 @@ impl StateStore {
     }
 
     fn save_locked(&self, state: &PersistedState) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create state dir {}", parent.display()))?;
-        }
+        let parent = self
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        fs::create_dir_all(&parent)
+            .with_context(|| format!("failed to create state dir {}", parent.display()))?;
 
         let payload =
             serde_json::to_vec_pretty(state).context("failed to serialize state payload")?;
-        let temp_path = self.path.with_extension("tmp");
-
-        fs::write(&temp_path, payload)
-            .with_context(|| format!("failed to write temp state file {}", temp_path.display()))?;
-        fs::rename(&temp_path, &self.path).with_context(|| {
-            format!(
-                "failed to move temp state file {} into {}",
-                temp_path.display(),
-                self.path.display()
-            )
-        })?;
+        let temp_file = write_temp_file(&parent, &payload)
+            .with_context(|| format!("failed to stage state file for {}", self.path.display()))?;
+        persist_temp_file(temp_file, &self.path)
+            .with_context(|| format!("failed to finalize state file {}", self.path.display()))?;
 
         Ok(())
+    }
+}
+
+fn write_temp_file(parent: &Path, payload: &[u8]) -> Result<NamedTempFile> {
+    let mut temp_file = NamedTempFile::new_in(parent)
+        .with_context(|| format!("failed to create temp state file in {}", parent.display()))?;
+    temp_file
+        .write_all(payload)
+        .context("failed to write state payload to temp file")?;
+    temp_file
+        .flush()
+        .context("failed to flush temp state file")?;
+    temp_file
+        .as_file()
+        .sync_all()
+        .context("failed to sync temp state file")?;
+
+    Ok(temp_file)
+}
+
+fn persist_temp_file(temp_file: NamedTempFile, path: &Path) -> Result<()> {
+    temp_file.persist(path).map_err(|err| {
+        let temp_path = err.file.path().to_path_buf();
+        anyhow::Error::new(err.error).context(format!(
+            "failed to replace {} with temp file {}",
+            path.display(),
+            temp_path.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn repeated_saves_replace_existing_state_file() {
+        let dir = tempdir().expect("create tempdir");
+        let path = dir.path().join("state.json");
+
+        let store = StateStore::load(&path).expect("load state store");
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+
+        runtime
+            .block_on(store.update_market("FIRST", |state| {
+                state.was_above_threshold = true;
+                state.last_action = Some("first save".to_string());
+            }))
+            .expect("first save succeeds");
+
+        runtime
+            .block_on(store.update_market("SECOND", |state| {
+                state.was_above_threshold = false;
+                state.last_action = Some("second save".to_string());
+            }))
+            .expect("second save succeeds");
+
+        let reloaded = StateStore::load(&path).expect("reload state store");
+        let snapshot = runtime.block_on(reloaded.snapshot());
+
+        assert_eq!(snapshot.markets.len(), 2);
+        assert_eq!(
+            snapshot
+                .markets
+                .get("SECOND")
+                .and_then(|entry| entry.last_action.as_deref()),
+            Some("second save")
+        );
+    }
+
+    #[test]
+    fn successful_save_does_not_leave_temp_files_behind() {
+        let dir = tempdir().expect("create tempdir");
+        let path = dir.path().join("state.json");
+
+        let store = StateStore::load(&path).expect("load state store");
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+
+        runtime
+            .block_on(store.update_market("ONLY", |state| {
+                state.last_action = Some("saved".to_string());
+            }))
+            .expect("save succeeds");
+
+        let entries = fs::read_dir(dir.path())
+            .expect("read tempdir")
+            .map(|entry| {
+                entry
+                    .expect("dir entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries, vec!["state.json"]);
     }
 }

@@ -114,6 +114,8 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
+	runtime := newBridgeRuntime()
+	runtime.storeSyncResult(bridge, nil)
 
 	var messages []string
 	prevDefer := deferEphemeralFunc
@@ -130,7 +132,7 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
 	interaction := commandInteraction("status", []*discordgo.ApplicationCommandInteractionDataOption{{Name: "duration", Value: " 30m "}})
 	interaction.Interaction.Member = &discordgo.Member{User: &discordgo.User{ID: "u-123"}}
 	interaction.Interaction.GuildID = "g-456"
@@ -183,6 +185,8 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
+	runtime := newBridgeRuntime()
+	runtime.storeSyncResult(bridge, nil)
 
 	var messages []string
 	prevDefer := deferEphemeralFunc
@@ -199,7 +203,7 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), bridge)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -207,5 +211,31 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	}
 	if messages[0] != "Command failed: execution failed" {
 		t.Fatalf("unexpected failure message: %q", messages[0])
+	}
+}
+
+func TestInteractionHandlerRespondsWhenCommandsAreSyncing(t *testing.T) {
+	var messages []string
+
+	prev := respondEphemeralFunc
+	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+		messages = append(messages, message)
+		return nil
+	}
+	t.Cleanup(func() {
+		respondEphemeralFunc = prev
+	})
+
+	runtime := newBridgeRuntime()
+	runtime.markSyncStarted()
+
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
+	handler(nil, commandInteraction("status", nil))
+
+	if len(messages) != 1 {
+		t.Fatalf("expected exactly one response, got %d", len(messages))
+	}
+	if messages[0] != spokeCommandsSyncingMessage {
+		t.Fatalf("unexpected syncing message: %q", messages[0])
 	}
 }

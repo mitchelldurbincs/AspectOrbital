@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -17,6 +18,7 @@ type fakeMessageSender struct {
 	message    string
 	sendErr    error
 	lastOption int
+	waitForCtx bool
 }
 
 func (f *fakeMessageSender) ChannelMessageSend(channelID string, content string, options ...discordgo.RequestOption) (*discordgo.Message, error) {
@@ -24,6 +26,14 @@ func (f *fakeMessageSender) ChannelMessageSend(channelID string, content string,
 	f.channelID = channelID
 	f.message = content
 	f.lastOption = len(options)
+	if f.waitForCtx {
+		cfg := &discordgo.RequestConfig{Request: httptest.NewRequest(http.MethodPost, "https://discord.invalid/api", nil)}
+		for _, option := range options {
+			option(cfg)
+		}
+		<-cfg.Request.Context().Done()
+		return nil, cfg.Request.Context().Err()
+	}
 
 	if f.sendErr != nil {
 		return nil, f.sendErr
@@ -140,6 +150,9 @@ func TestNotifySendsDiscordMessageAndReturns202(t *testing.T) {
 	if sender.message != "<@999> Disk is full" {
 		t.Fatalf("unexpected message payload: %q", sender.message)
 	}
+	if sender.lastOption == 0 {
+		t.Fatal("expected notify send to include request options")
+	}
 }
 
 func TestNotifyUnknownChannelReturns400(t *testing.T) {
@@ -172,6 +185,24 @@ func TestNotifyDiscordFailureReturns502(t *testing.T) {
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("expected status %d, got %d", http.StatusBadGateway, rec.Code)
+	}
+}
+
+func TestNotifyDiscordTimeoutReturns504(t *testing.T) {
+	sender := &fakeMessageSender{waitForCtx: true}
+	h := testHubHandler(sender)
+
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+	authorizeNotifyRequest(req)
+	rec := httptest.NewRecorder()
+
+	h.notify(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected status %d, got %d", http.StatusGatewayTimeout, rec.Code)
 	}
 }
 

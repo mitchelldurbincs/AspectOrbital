@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -29,6 +31,8 @@ type hubHandler struct {
 type discordMessageSender interface {
 	ChannelMessageSend(channelID string, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
 }
+
+const notifyDispatchTimeout = 8 * time.Second
 
 func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -64,9 +68,16 @@ func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 		message = h.criticalMention + " " + message
 	}
 
-	if _, err := h.session.ChannelMessageSend(channelID, message); err != nil {
+	dispatchCtx, cancel := context.WithTimeout(r.Context(), notifyDispatchTimeout)
+	defer cancel()
+
+	if _, err := h.session.ChannelMessageSend(channelID, message, discordgo.WithContext(dispatchCtx)); err != nil {
 		h.log.Printf("failed to send discord message (channel=%s severity=%s): %v", payload.TargetChannel, payload.Severity, err)
-		http.Error(w, "failed to dispatch discord message", http.StatusBadGateway)
+		status := http.StatusBadGateway
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			status = http.StatusGatewayTimeout
+		}
+		http.Error(w, "failed to dispatch discord message", status)
 		return
 	}
 

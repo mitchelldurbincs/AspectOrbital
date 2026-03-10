@@ -80,7 +80,7 @@ func TestLoadConfigInvalidSummaryEnabledFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid FINANCE_SUMMARY_ENABLED")
 	}
-	if !strings.Contains(err.Error(), "invalid FINANCE_SUMMARY_ENABLED") {
+	if !strings.Contains(err.Error(), "assigning FINANCE_SUMMARY_ENABLED") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -94,7 +94,7 @@ func TestLoadConfigInvalidSummaryLookbackDaysFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid FINANCE_SUMMARY_LOOKBACK_DAYS")
 	}
-	if !strings.Contains(err.Error(), "invalid FINANCE_SUMMARY_LOOKBACK_DAYS") {
+	if !strings.Contains(err.Error(), "assigning FINANCE_SUMMARY_LOOKBACK_DAYS") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -108,7 +108,7 @@ func TestLoadConfigInvalidSummarySendEmptyFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid FINANCE_SUMMARY_SEND_EMPTY")
 	}
-	if !strings.Contains(err.Error(), "invalid FINANCE_SUMMARY_SEND_EMPTY") {
+	if !strings.Contains(err.Error(), "assigning FINANCE_SUMMARY_SEND_EMPTY") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -122,7 +122,7 @@ func TestLoadConfigInvalidSummaryMaxItemsFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid FINANCE_SUMMARY_MAX_ITEMS")
 	}
-	if !strings.Contains(err.Error(), "invalid FINANCE_SUMMARY_MAX_ITEMS") {
+	if !strings.Contains(err.Error(), "assigning FINANCE_SUMMARY_MAX_ITEMS") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -15,15 +15,20 @@ import (
 )
 
 func Discover(logger *log.Logger) *Bridge {
+	bridge, _ := DiscoverWithStatus(logger)
+	return bridge
+}
+
+func DiscoverWithStatus(logger *log.Logger) (*Bridge, error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("SPOKE_COMMANDS_ENABLED")), "false") {
 		logger.Println("spoke command bridge disabled by SPOKE_COMMANDS_ENABLED=false")
-		return nil
+		return nil, nil
 	}
 
 	services, err := configuredServices()
 	if err != nil {
 		logger.Printf("spoke command bridge unavailable: %v", err)
-		return nil
+		return nil, err
 	}
 
 	bridge := NewBridgeWithServices(logger, &http.Client{Timeout: CommandHTTPTimeout}, services, nil, nil)
@@ -31,7 +36,7 @@ func Discover(logger *log.Logger) *Bridge {
 	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
 	if err != nil {
 		logger.Printf("spoke command bridge unavailable: %v", err)
-		return nil
+		return nil, err
 	}
 
 	bridge.commands = commands
@@ -45,7 +50,7 @@ func Discover(logger *log.Logger) *Bridge {
 	}
 
 	logger.Printf("loaded %d command(s) across %d service(s): %s", len(commands), len(parts), strings.Join(parts, ", "))
-	return bridge
+	return bridge, nil
 }
 
 func configuredServices() ([]ServiceDefinition, error) {

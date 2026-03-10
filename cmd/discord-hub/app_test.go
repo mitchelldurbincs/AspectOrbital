@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -36,6 +37,18 @@ func TestResolveApplicationIDReturnsErrorWhenUnavailable(t *testing.T) {
 func TestNewHTTPServerRegistersHealthAndNotifyHandlers(t *testing.T) {
 	handler := testHubHandler(&fakeMessageSender{})
 	server := newHTTPServer("127.0.0.1:0", handler)
+	if server.ReadTimeout != 10*time.Second {
+		t.Fatalf("expected ReadTimeout=10s, got %v", server.ReadTimeout)
+	}
+	if server.WriteTimeout != 15*time.Second {
+		t.Fatalf("expected WriteTimeout=15s, got %v", server.WriteTimeout)
+	}
+	if server.IdleTimeout != 60*time.Second {
+		t.Fatalf("expected IdleTimeout=60s, got %v", server.IdleTimeout)
+	}
+	if server.MaxHeaderBytes != 1<<20 {
+		t.Fatalf("expected MaxHeaderBytes=%d, got %d", 1<<20, server.MaxHeaderBytes)
+	}
 
 	healthReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthRec := httptest.NewRecorder()

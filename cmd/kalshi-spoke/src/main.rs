@@ -855,7 +855,9 @@ async fn handle_ws_text(
                     .await
             {
                 runtime.record_ws_error(err.to_string()).await;
-                warn!("ticker processing failed: {err:#}");
+                warn!(
+                    "ticker processing failed: {err:#}; state persistence may be stale and alerts/orders may repeat until this is fixed"
+                );
             }
         }
         "error" => {

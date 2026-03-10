@@ -16,7 +16,7 @@ var respondEphemeralFunc = respondEphemeral
 var deferEphemeralFunc = deferEphemeral
 var followupEphemeralFunc = followupEphemeral
 
-func interactionHandler(logger *log.Logger, spokeBridge *spokebridge.Bridge) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func interactionHandler(logger *log.Logger, runtime *bridgeRuntime) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil || i.Type != discordgo.InteractionApplicationCommand {
 			return
@@ -31,8 +31,9 @@ func interactionHandler(logger *log.Logger, spokeBridge *spokebridge.Bridge) fun
 			return
 		}
 
+		spokeBridge := runtime.currentBridge()
 		if spokeBridge == nil || !spokeBridge.OwnsCommand(commandData.Name) {
-			if err := respondEphemeralFunc(s, i.Interaction, "That command is not available right now. Try again in a moment."); err != nil {
+			if err := respondEphemeralFunc(s, i.Interaction, runtime.unavailableMessage()); err != nil {
 				logger.Printf("failed to respond to /%s: %v", commandData.Name, err)
 			}
 			return
@@ -116,6 +117,10 @@ func interactionOptionValues(options []*discordgo.ApplicationCommandInteractionD
 	values := make(map[string]any, len(options))
 
 	for _, option := range options {
+		if option == nil {
+			continue
+		}
+
 		name := strings.ToLower(strings.TrimSpace(option.Name))
 		if name == "" {
 			continue

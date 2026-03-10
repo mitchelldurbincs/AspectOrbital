@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-
-	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
 )
 
 func runHub(logger *log.Logger, cfg hubConfig) error {
@@ -23,8 +21,8 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds
 
-	spokeBridge := spokebridge.Discover(logger)
-	session.AddHandler(interactionHandler(logger, spokeBridge))
+	bridgeRuntime := newBridgeRuntime()
+	session.AddHandler(interactionHandler(logger, bridgeRuntime))
 
 	if err := session.Open(); err != nil {
 		return fmt.Errorf("failed to open discord session: %w", err)
@@ -38,12 +36,6 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 
 	if _, err := upsertPingCommand(session, appID, cfg.GuildID); err != nil {
 		return fmt.Errorf("failed to register /ping command: %w", err)
-	}
-
-	if spokeBridge != nil {
-		if err := upsertSpokeCommands(session, appID, cfg.GuildID, spokeBridge); err != nil {
-			logger.Printf("warning: failed to register spoke commands: %v", err)
-		}
 	}
 
 	if len(cfg.ChannelMap) == 0 {
@@ -60,6 +52,8 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 
 	httpServer := newHTTPServer(cfg.HTTPAddr, handler)
 	httpErrCh := make(chan error, 1)
+	spokeSyncCtx, stopSpokeSync := context.WithCancel(context.Background())
+	defer stopSpokeSync()
 
 	go func() {
 		logger.Printf("HTTP server listening on %s", cfg.HTTPAddr)
@@ -69,6 +63,8 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 		}
 		httpErrCh <- nil
 	}()
+
+	startSpokeCommandSync(spokeSyncCtx, logger, session, appID, cfg.GuildID, bridgeRuntime)
 
 	logger.Println("discord-hub is running")
 
@@ -112,5 +108,9 @@ func newHTTPServer(addr string, handler *hubHandler) *http.Server {
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 }
