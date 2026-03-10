@@ -155,29 +155,19 @@ func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, servi
 		}
 
 		message := formatReminderMessage(cfg, commitment)
-		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{
-			Version:       hubnotify.Version2,
-			TargetChannel: cfg.NotifyChannel,
-			CallbackURL:   cfg.DiscordCallbackURL,
-			Service:       notifyService,
-			Event:         accountabilityNotifyEvent,
-			Severity:      cfg.NotifySeverity,
-			Title:         hubnotify.CanonicalTitle(notifyService, accountabilityNotifyEvent),
-			Summary:       message,
-			Fields: []hubnotify.NotifyField{
-				{Key: "Task", Value: commitment.Task, Group: hubnotify.FieldGroupContext, Order: 10, Inline: false},
-				{Key: "User", Value: commitment.UserID, Group: hubnotify.FieldGroupContext, Order: 20, Inline: true},
-				{Key: "Deadline", Value: commitment.Deadline.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 30, Inline: true},
-			},
-			Actions: []hubnotify.NotifyAction{
-				{ID: accountabilityActionSnooze30m, Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
-				{ID: accountabilityActionDismiss, Label: "Dismiss", Style: hubnotify.ActionStyleSecondary},
-			},
-			AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{commitment.UserID}, Roles: []string{}, RepliedUser: false},
-			Visibility:            hubnotify.VisibilityPublic,
-			SuppressNotifications: false,
-			OccurredAt:            time.Now().UTC(),
-		})
+		notifyRequest := hubnotify.NewPublicNotifyRequest(cfg.NotifyChannel, notifyService, accountabilityNotifyEvent, cfg.NotifySeverity, message, time.Now())
+		notifyRequest.CallbackURL = cfg.DiscordCallbackURL
+		notifyRequest.Fields = []hubnotify.NotifyField{
+			{Key: "Task", Value: commitment.Task, Group: hubnotify.FieldGroupContext, Order: 10, Inline: false},
+			{Key: "User", Value: commitment.UserID, Group: hubnotify.FieldGroupContext, Order: 20, Inline: true},
+			{Key: "Deadline", Value: commitment.Deadline.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 30, Inline: true},
+		}
+		notifyRequest.Actions = []hubnotify.NotifyAction{
+			{ID: accountabilityActionSnooze30m, Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
+			{ID: accountabilityActionDismiss, Label: "Dismiss", Style: hubnotify.ActionStyleSecondary},
+		}
+		notifyRequest.AllowedMentions = hubnotify.AllowedMentions{Parse: []string{}, Users: []string{commitment.UserID}, Roles: []string{}, RepliedUser: false}
+		notifyErr := hub.Notify(ctx, notifyRequest)
 		if notifyErr != nil {
 			logger.Printf("failed reminder notify for commitment=%d user=%s: %v", commitment.ID, commitment.UserID, notifyErr)
 			continue

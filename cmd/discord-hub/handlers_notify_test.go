@@ -51,7 +51,7 @@ func testHubHandler(sender discordMessageSender) *hubHandler {
 		log:             log.New(io.Discard, "", 0),
 		session:         sender,
 		channelNameToID: map[string]string{"alerts": "123"},
-		criticalMention: "<@999>",
+		actionCallbacks: newActionCallbackRegistry(time.Hour),
 		notifyAuthToken: "test-notify-token",
 	}
 }
@@ -127,6 +127,25 @@ func TestValidateNotifyPayloadRejectsInvalidValues(t *testing.T) {
 				OccurredAt:            time.Now().UTC(),
 			},
 			wantErr: "version must be 2",
+		},
+		{
+			name: "non-public visibility",
+			payload: notifyPayload{
+				Version:               hubnotify.Version2,
+				TargetChannel:         "alerts",
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "warning",
+				Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:               "ok",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "ephemeral",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "visibility must be public",
 		},
 		{
 			name: "missing target channel",
@@ -225,6 +244,54 @@ func TestValidateNotifyPayloadRejectsInvalidValues(t *testing.T) {
 				OccurredAt:            time.Now().UTC(),
 			},
 			wantErr: "allowedMentions.users cannot be used when parse includes users",
+		},
+		{
+			name: "duplicate allowed mentions user ids",
+			payload: notifyPayload{
+				Version:       hubnotify.Version2,
+				TargetChannel: "alerts",
+				Service:       "beeminder-spoke",
+				Event:         "trigger-fired",
+				Severity:      "warning",
+				Title:         "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:       "ok",
+				Fields:        []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:       []hubnotify.NotifyAction{},
+				AllowedMentions: hubnotify.AllowedMentions{
+					Parse:       []string{},
+					Users:       []string{"12345678901234567", "12345678901234567"},
+					Roles:       []string{},
+					RepliedUser: false,
+				},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "allowedMentions.users must not contain duplicates",
+		},
+		{
+			name: "invalid allowed mentions role id",
+			payload: notifyPayload{
+				Version:       hubnotify.Version2,
+				TargetChannel: "alerts",
+				Service:       "beeminder-spoke",
+				Event:         "trigger-fired",
+				Severity:      "warning",
+				Title:         "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:       "ok",
+				Fields:        []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:       []hubnotify.NotifyAction{},
+				AllowedMentions: hubnotify.AllowedMentions{
+					Parse:       []string{},
+					Users:       []string{},
+					Roles:       []string{"not-a-snowflake"},
+					RepliedUser: false,
+				},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "allowedMentions.roles must only include Discord snowflake IDs",
 		},
 		{
 			name: "non-link action requires callback url",
@@ -330,7 +397,7 @@ func TestBuildNotifyMessageIncludesExplicitAllowedMentions(t *testing.T) {
 		OccurredAt:            time.Date(2026, time.March, 10, 15, 0, 0, 0, time.UTC),
 	}
 
-	message, err := buildNotifyMessage(payload)
+	message, err := buildNotifyMessage(payload, newActionCallbackRegistry(time.Hour))
 	if err != nil {
 		t.Fatalf("buildNotifyMessage returned error: %v", err)
 	}
@@ -342,6 +409,9 @@ func TestBuildNotifyMessageIncludesExplicitAllowedMentions(t *testing.T) {
 	}
 	if message.Embeds[0].Color != 0xD29922 {
 		t.Fatalf("unexpected warning color: %d", message.Embeds[0].Color)
+	}
+	if message.Embeds[0].Footer == nil || message.Embeds[0].Footer.Text != encodeNotifyFooter("accountability-spoke", "commitment-reminder") {
+		t.Fatalf("unexpected embed footer metadata: %#v", message.Embeds[0].Footer)
 	}
 }
 
@@ -362,7 +432,8 @@ func TestBuildNotifyMessageIncludesButtons(t *testing.T) {
 		OccurredAt:      time.Date(2026, time.March, 10, 15, 0, 0, 0, time.UTC),
 	}
 
-	message, err := buildNotifyMessage(payload)
+	registry := newActionCallbackRegistry(time.Hour)
+	message, err := buildNotifyMessage(payload, registry)
 	if err != nil {
 		t.Fatalf("buildNotifyMessage returned error: %v", err)
 	}
@@ -377,8 +448,11 @@ func TestBuildNotifyMessageIncludesButtons(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected component type: %#v", row.Components[0])
 	}
-	if button.CustomID != encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m:study") {
+	if button.CustomID != encodeNotifyActionCustomID(hubnotify.CallbackToken("http://127.0.0.1:8092/callback"), "snooze_10m:study") {
 		t.Fatalf("unexpected custom ID: %q", button.CustomID)
+	}
+	if callbackURL, ok := registry.Resolve(hubnotify.CallbackToken("http://127.0.0.1:8092/callback")); !ok || callbackURL != "http://127.0.0.1:8092/callback" {
+		t.Fatalf("callback token was not registered: %q %v", callbackURL, ok)
 	}
 }
 

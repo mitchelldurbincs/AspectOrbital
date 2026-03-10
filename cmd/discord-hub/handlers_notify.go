@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -25,7 +26,7 @@ type hubHandler struct {
 	log             *log.Logger
 	session         discordMessageSender
 	channelNameToID map[string]string
-	criticalMention string
+	actionCallbacks *actionCallbackRegistry
 	notifyAuthToken string
 }
 
@@ -34,19 +35,23 @@ type discordMessageSender interface {
 }
 
 const (
-	notifyDispatchTimeout = 8 * time.Second
-	notifyTitlePattern    = `^\[[A-Z0-9_-]{1,32}\] [A-Z0-9 _-]{1,80}$`
-	componentIDPrefix     = "ao2"
-	componentIDMaxLen     = 100
-	maxNotifySummaryLen   = 1024
-	maxNotifyFieldKeyLen  = 64
-	maxNotifyFieldValLen  = 1024
-	maxNotifyFieldCount   = 25
-	maxNotifyActionCount  = 5
+	notifyDispatchTimeout   = 8 * time.Second
+	notifyTitlePattern      = `^\[[A-Z0-9_-]{1,32}\] [A-Z0-9 _-]{1,80}$`
+	componentIDPrefix       = "ao2"
+	componentIDMaxLen       = 100
+	maxNotifySummaryLen     = 1024
+	maxNotifyFieldKeyLen    = 64
+	maxNotifyFieldValLen    = 1024
+	maxNotifyFieldCount     = 25
+	maxNotifyActionCount    = 5
+	maxNotifyMentionCount   = 100
+	notifyActionCallbackTTL = 7 * 24 * time.Hour
+	notifyFooterSeparator   = " :: "
 )
 
 var (
 	notifyTitleRegex     = regexp.MustCompile(notifyTitlePattern)
+	notifySnowflakeRegex = regexp.MustCompile(`^[0-9]{17,20}$`)
 	notifySeverityColors = map[string]int{
 		hubnotify.SeverityInfo:     0x1F6FEB,
 		hubnotify.SeverityWarning:  0xD29922,
@@ -71,6 +76,69 @@ var (
 		hubnotify.ActionStyleLink:      discordgo.LinkButton,
 	}
 )
+
+type actionCallbackRegistry struct {
+	mu      sync.Mutex
+	ttl     time.Duration
+	now     func() time.Time
+	entries map[string]actionCallbackEntry
+}
+
+type actionCallbackEntry struct {
+	callbackURL string
+	expiresAt   time.Time
+}
+
+func newActionCallbackRegistry(ttl time.Duration) *actionCallbackRegistry {
+	if ttl <= 0 {
+		ttl = notifyActionCallbackTTL
+	}
+	return &actionCallbackRegistry{
+		ttl:     ttl,
+		now:     time.Now,
+		entries: make(map[string]actionCallbackEntry),
+	}
+}
+
+func (r *actionCallbackRegistry) Register(callbackURL string) string {
+	if r == nil {
+		return ""
+	}
+	token := hubnotify.CallbackToken(callbackURL)
+	now := r.now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneExpiredLocked(now)
+	r.entries[token] = actionCallbackEntry{callbackURL: callbackURL, expiresAt: now.Add(r.ttl)}
+	return token
+}
+
+func (r *actionCallbackRegistry) Resolve(token string) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	key := strings.TrimSpace(token)
+	now := r.now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entry, ok := r.entries[key]
+	if !ok {
+		return "", false
+	}
+	if !entry.expiresAt.After(now) {
+		delete(r.entries, key)
+		return "", false
+	}
+	return entry.callbackURL, true
+}
+
+func (r *actionCallbackRegistry) pruneExpiredLocked(now time.Time) {
+	for token, entry := range r.entries {
+		if !entry.expiresAt.After(now) {
+			delete(r.entries, token)
+		}
+	}
+}
 
 func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -104,7 +172,7 @@ func (h *hubHandler) notify(w http.ResponseWriter, r *http.Request) {
 	dispatchCtx, cancel := context.WithTimeout(r.Context(), notifyDispatchTimeout)
 	defer cancel()
 
-	message, err := buildNotifyMessage(payload)
+	message, err := buildNotifyMessage(payload, h.actionCallbacks)
 	if err != nil {
 		h.writeBadRequest(w, err.Error())
 		return
@@ -204,7 +272,7 @@ func validateNotifyPayload(payload *notifyPayload) error {
 		return errors.New("visibility is required")
 	}
 	if payload.Visibility != hubnotify.VisibilityPublic {
-		return errors.New("visibility must be public for /notify")
+		return errors.New("visibility must be public")
 	}
 	if payload.OccurredAt.IsZero() {
 		return errors.New("occurredAt is required")
@@ -231,7 +299,7 @@ func validateNotifyPayload(payload *notifyPayload) error {
 	return nil
 }
 
-func buildNotifyMessage(payload notifyPayload) (*discordgo.MessageSend, error) {
+func buildNotifyMessage(payload notifyPayload, callbacks *actionCallbackRegistry) (*discordgo.MessageSend, error) {
 	allowedMentions, err := toDiscordAllowedMentions(payload.AllowedMentions)
 	if err != nil {
 		return nil, err
@@ -242,7 +310,7 @@ func buildNotifyMessage(payload notifyPayload) (*discordgo.MessageSend, error) {
 		AllowedMentions: allowedMentions,
 	}
 	if len(payload.Actions) > 0 {
-		components, err := buildNotifyComponents(payload)
+		components, err := buildNotifyComponents(payload, callbacks)
 		if err != nil {
 			return nil, err
 		}
@@ -273,7 +341,7 @@ func buildSeverityEmbed(payload notifyPayload) *discordgo.MessageEmbed {
 		Fields:      fields,
 		Timestamp:   payload.OccurredAt.UTC().Format(time.RFC3339),
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: payload.Service,
+			Text: encodeNotifyFooter(payload.Service, payload.Event),
 		},
 	}
 }
@@ -338,16 +406,39 @@ func validateAllowedMentions(mentions hubnotify.AllowedMentions) error {
 		}
 	}
 	for _, userID := range mentions.Users {
-		if strings.TrimSpace(userID) == "" {
-			return errors.New("allowedMentions.users must not contain empty values")
-		}
+		_ = userID
 	}
 	for _, roleID := range mentions.Roles {
-		if strings.TrimSpace(roleID) == "" {
-			return errors.New("allowedMentions.roles must not contain empty values")
-		}
+		_ = roleID
+	}
+	if err := validateMentionIDs("allowedMentions.users", mentions.Users); err != nil {
+		return err
+	}
+	if err := validateMentionIDs("allowedMentions.roles", mentions.Roles); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func validateMentionIDs(fieldName string, ids []string) error {
+	if len(ids) > maxNotifyMentionCount {
+		return fmt.Errorf("%s must contain no more than %d values", fieldName, maxNotifyMentionCount)
+	}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		value := strings.TrimSpace(id)
+		if value == "" {
+			return fmt.Errorf("%s must not contain empty values", fieldName)
+		}
+		if !notifySnowflakeRegex.MatchString(value) {
+			return fmt.Errorf("%s must only include Discord snowflake IDs", fieldName)
+		}
+		if _, ok := seen[value]; ok {
+			return fmt.Errorf("%s must not contain duplicates", fieldName)
+		}
+		seen[value] = struct{}{}
+	}
 	return nil
 }
 
@@ -391,7 +482,7 @@ func validateNotifyActions(payload notifyPayload) error {
 			return fmt.Errorf("action id %q is duplicated", action.ID)
 		}
 		seenIDs[action.ID] = struct{}{}
-		if len(encodeNotifyActionCustomID(payload.CallbackURL, payload.Service, payload.Event, action.ID)) > componentIDMaxLen {
+		if len(encodeNotifyActionCustomID(hubnotify.CallbackToken(payload.CallbackURL), action.ID)) > componentIDMaxLen {
 			return fmt.Errorf("action %q exceeds discord custom_id limit", action.Label)
 		}
 	}
@@ -421,8 +512,12 @@ func validateCallbackURL(raw string) error {
 	return nil
 }
 
-func buildNotifyComponents(payload notifyPayload) ([]discordgo.MessageComponent, error) {
+func buildNotifyComponents(payload notifyPayload, callbacks *actionCallbackRegistry) ([]discordgo.MessageComponent, error) {
 	buttons := make([]discordgo.MessageComponent, 0, len(payload.Actions))
+	callbackToken := ""
+	if payload.CallbackURL != "" {
+		callbackToken = callbacks.Register(payload.CallbackURL)
+	}
 	for _, action := range payload.Actions {
 		button := discordgo.Button{
 			Label: action.Label,
@@ -431,7 +526,10 @@ func buildNotifyComponents(payload notifyPayload) ([]discordgo.MessageComponent,
 		if action.Style == hubnotify.ActionStyleLink {
 			button.URL = action.URL
 		} else {
-			button.CustomID = encodeNotifyActionCustomID(payload.CallbackURL, payload.Service, payload.Event, action.ID)
+			if callbackToken == "" {
+				return nil, errors.New("callbackUrl could not be registered")
+			}
+			button.CustomID = encodeNotifyActionCustomID(callbackToken, action.ID)
 		}
 		buttons = append(buttons, button)
 	}
@@ -464,17 +562,34 @@ func formatNotifyTitle(service string, event string) string {
 	return hubnotify.CanonicalTitle(service, event)
 }
 
-func encodeNotifyActionCustomID(callbackURL string, service string, event string, actionID string) string {
-	return strings.Join([]string{componentIDPrefix, service, event, actionID, callbackURL}, "|")
+func encodeNotifyFooter(service string, event string) string {
+	return strings.TrimSpace(service) + notifyFooterSeparator + strings.TrimSpace(event)
 }
 
-func decodeNotifyActionCustomID(customID string) (string, string, string, string, error) {
+func decodeNotifyFooter(raw string) (string, string, error) {
+	parts := strings.SplitN(strings.TrimSpace(raw), notifyFooterSeparator, 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("notify footer metadata is invalid")
+	}
+	service := strings.TrimSpace(parts[0])
+	event := strings.TrimSpace(parts[1])
+	if service == "" || event == "" {
+		return "", "", errors.New("notify footer metadata is incomplete")
+	}
+	return service, event, nil
+}
+
+func encodeNotifyActionCustomID(callbackToken string, actionID string) string {
+	return strings.Join([]string{componentIDPrefix, strings.TrimSpace(callbackToken), strings.TrimSpace(actionID)}, "|")
+}
+
+func decodeNotifyActionCustomID(customID string) (string, string, error) {
 	parts := strings.Split(customID, "|")
-	if len(parts) != 5 || parts[0] != componentIDPrefix {
-		return "", "", "", "", errors.New("unsupported component custom_id")
+	if len(parts) != 3 || parts[0] != componentIDPrefix {
+		return "", "", errors.New("unsupported component custom_id")
 	}
-	if parts[1] == "" || parts[2] == "" || parts[3] == "" || parts[4] == "" {
-		return "", "", "", "", errors.New("component custom_id is incomplete")
+	if parts[1] == "" || parts[2] == "" {
+		return "", "", errors.New("component custom_id is incomplete")
 	}
-	return parts[4], parts[1], parts[2], parts[3], nil
+	return parts[1], parts[2], nil
 }

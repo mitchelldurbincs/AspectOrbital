@@ -52,6 +52,17 @@ SPOKE_COMMAND_SERVICES='[
 ]'
 ```
 
+Canonical example with all current spokes:
+
+```bash
+SPOKE_COMMAND_SERVICES='[
+  {"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},
+  {"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},
+  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"},
+  {"name":"accountability-spoke","commandsUrl":"http://accountability-spoke:8093/control/commands","executeUrl":"http://accountability-spoke:8093/control/command"}
+]'
+```
+
 Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
 
 `discord-hub` enforces globally unique slash command names across all services. Startup fails when duplicate names are discovered.
@@ -68,11 +79,19 @@ Send alerts from local services:
 
 ```bash
 export HUB_NOTIFY_AUTH_TOKEN=replace-with-long-random-token
+export SPOKE_COMMAND_AUTH_TOKEN=replace-with-long-random-token
 
 curl -X POST http://localhost:8080/notify \
   -H "Authorization: Bearer ${HUB_NOTIFY_AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"targetChannel":"kalshi-alerts","message":"Test alert","severity":"info"}'
+  -d '{"version":2,"targetChannel":"kalshi-alerts","service":"finance-spoke","event":"weekly-summary","severity":"info","title":"[FINANCE-SPOKE] WEEKLY SUMMARY","summary":"Test alert","fields":[{"key":"Window","value":"Last 7 days","group":"Timing","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}'
 ```
 
 Valid severities: `info`, `warning`, `critical`.
+
+`/notify` always posts a channel-visible message, so only `visibility="public"` is accepted.
+
+## Spoke command auth
+
+`discord-hub` sends `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}` when executing spoke-owned slash commands.
+Every spoke `POST /control/command` endpoint is expected to reject requests without that bearer token.

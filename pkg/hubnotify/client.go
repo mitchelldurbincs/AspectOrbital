@@ -3,6 +3,8 @@ package hubnotify
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -93,7 +95,6 @@ const (
 	SeverityWarning      = "warning"
 	SeverityCritical     = "critical"
 	VisibilityPublic     = "public"
-	VisibilityEphemeral  = "ephemeral"
 	FieldGroupContext    = "Context"
 	FieldGroupMetrics    = "Metrics"
 	FieldGroupTiming     = "Timing"
@@ -110,6 +111,32 @@ func CanonicalTitle(service string, event string) string {
 	eventName := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(event), "-", " "))
 	eventName = strings.ReplaceAll(eventName, "_", " ")
 	return "[" + serviceName + "] " + eventName
+}
+
+func CallbackToken(callbackURL string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(callbackURL)))
+	return base64.RawURLEncoding.EncodeToString(sum[:9])
+}
+
+func NoMentions() AllowedMentions {
+	return AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false}
+}
+
+func NewPublicNotifyRequest(targetChannel string, service string, event string, severity string, summary string, occurredAt time.Time) NotifyRequest {
+	return NotifyRequest{
+		Version:               Version2,
+		TargetChannel:         strings.TrimSpace(targetChannel),
+		Service:               strings.TrimSpace(service),
+		Event:                 strings.TrimSpace(event),
+		Severity:              strings.TrimSpace(severity),
+		Title:                 CanonicalTitle(service, event),
+		Summary:               strings.TrimSpace(summary),
+		Actions:               []NotifyAction{},
+		AllowedMentions:       NoMentions(),
+		Visibility:            VisibilityPublic,
+		SuppressNotifications: false,
+		OccurredAt:            occurredAt.UTC(),
+	}
 }
 
 func NewClient(notifyURL string, authToken string, httpClient *http.Client) *Client {

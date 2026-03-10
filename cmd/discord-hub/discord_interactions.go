@@ -86,13 +86,13 @@ func (d *httpActionCallbackDispatcher) Dispatch(ctx context.Context, callbackURL
 	return callbackResponse, nil
 }
 
-func interactionHandler(logger *log.Logger, runtime *bridgeRuntime, callbackDispatcher actionCallbackDispatcher) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func interactionHandler(logger *log.Logger, runtime *bridgeRuntime, callbackDispatcher actionCallbackDispatcher, callbacks *actionCallbackRegistry) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil {
 			return
 		}
 		if i.Type == discordgo.InteractionMessageComponent {
-			handleMessageComponentInteraction(logger, callbackDispatcher, s, i)
+			handleMessageComponentInteraction(logger, callbackDispatcher, callbacks, s, i)
 			return
 		}
 		if i.Type != discordgo.InteractionApplicationCommand {
@@ -142,7 +142,7 @@ func interactionHandler(logger *log.Logger, runtime *bridgeRuntime, callbackDisp
 	}
 }
 
-func handleMessageComponentInteraction(logger *log.Logger, callbackDispatcher actionCallbackDispatcher, session *discordgo.Session, interaction *discordgo.InteractionCreate) {
+func handleMessageComponentInteraction(logger *log.Logger, callbackDispatcher actionCallbackDispatcher, callbacks *actionCallbackRegistry, session *discordgo.Session, interaction *discordgo.InteractionCreate) {
 	if callbackDispatcher == nil {
 		if err := respondEphemeralFunc(session, interaction.Interaction, "That action is not available right now."); err != nil {
 			logger.Printf("failed to respond to component interaction: %v", err)
@@ -151,10 +151,24 @@ func handleMessageComponentInteraction(logger *log.Logger, callbackDispatcher ac
 	}
 
 	componentData := interaction.MessageComponentData()
-	callbackURL, service, event, actionID, err := decodeNotifyActionCustomID(strings.TrimSpace(componentData.CustomID))
+	callbackToken, actionID, err := decodeNotifyActionCustomID(strings.TrimSpace(componentData.CustomID))
 	if err != nil {
 		if respondErr := respondEphemeralFunc(session, interaction.Interaction, "That action is invalid."); respondErr != nil {
 			logger.Printf("failed to respond to invalid component interaction: %v", respondErr)
+		}
+		return
+	}
+	callbackURL, ok := callbacks.Resolve(callbackToken)
+	if !ok {
+		if respondErr := respondEphemeralFunc(session, interaction.Interaction, "That action has expired. Please wait for the next alert."); respondErr != nil {
+			logger.Printf("failed to respond to expired component interaction: %v", respondErr)
+		}
+		return
+	}
+	service, event, err := messageServiceEvent(interaction.Message)
+	if err != nil {
+		if respondErr := respondEphemeralFunc(session, interaction.Interaction, "That action is missing its source metadata."); respondErr != nil {
+			logger.Printf("failed to respond to invalid component metadata: %v", respondErr)
 		}
 		return
 	}
@@ -266,6 +280,13 @@ func sourceMessageURL(message *discordgo.Message) string {
 		return ""
 	}
 	return strings.TrimSpace(message.Embeds[0].URL)
+}
+
+func messageServiceEvent(message *discordgo.Message) (string, string, error) {
+	if message == nil || len(message.Embeds) == 0 || message.Embeds[0] == nil || message.Embeds[0].Footer == nil {
+		return "", "", errors.New("message metadata is missing")
+	}
+	return decodeNotifyFooter(message.Embeds[0].Footer.Text)
 }
 
 func messageID(interaction *discordgo.Interaction) string {

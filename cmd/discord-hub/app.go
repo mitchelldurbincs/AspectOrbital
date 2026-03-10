@@ -22,7 +22,6 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 	session.Identify.Intents = discordgo.IntentsGuilds
 
 	bridgeRuntime := newBridgeRuntime()
-	session.AddHandler(interactionHandler(logger, bridgeRuntime, newActionCallbackDispatcher(nil, cfg.CallbackAuthToken)))
 
 	if err := session.Open(); err != nil {
 		return fmt.Errorf("failed to open discord session: %w", err)
@@ -46,9 +45,10 @@ func runHub(logger *log.Logger, cfg hubConfig) error {
 		log:             logger,
 		session:         session,
 		channelNameToID: cfg.ChannelMap,
-		criticalMention: cfg.CriticalMention,
+		actionCallbacks: newActionCallbackRegistry(notifyActionCallbackTTL),
 		notifyAuthToken: cfg.NotifyAuthToken,
 	}
+	session.AddHandler(interactionHandler(logger, bridgeRuntime, newActionCallbackDispatcher(nil, cfg.CallbackAuthToken), handler.actionCallbacks))
 
 	httpServer := newHTTPServer(cfg.HTTPAddr, handler)
 	httpErrCh := make(chan error, 1)

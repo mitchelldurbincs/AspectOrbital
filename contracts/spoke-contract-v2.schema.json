@@ -95,7 +95,7 @@
     },
     "notifyVisibility": {
       "type": "string",
-      "enum": ["public", "ephemeral"]
+      "const": "public"
     },
     "titleFormat": {
       "type": "string",

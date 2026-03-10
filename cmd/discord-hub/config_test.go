@@ -17,7 +17,6 @@ func clearHubEnv(t *testing.T) {
 		"HUB_NOTIFY_AUTH_TOKEN",
 		"SPOKE_COMMAND_AUTH_TOKEN",
 		"HUB_CALLBACK_AUTH_TOKEN",
-		"DISCORD_CRITICAL_MENTION",
 		"DISCORD_CHANNEL_MAP",
 		"SPOKE_COMMANDS_ENABLED",
 		"SPOKE_COMMAND_SERVICES",
@@ -39,7 +38,6 @@ func setHubRequiredEnv(t *testing.T) {
 	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("SPOKE_COMMAND_AUTH_TOKEN", "test-command-token")
 	t.Setenv("HUB_CALLBACK_AUTH_TOKEN", "test-callback-token")
-	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
 	t.Setenv("SPOKE_COMMANDS_ENABLED", "false")
 }
 

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -138,7 +139,7 @@ func TestInteractionHandlerRespondsToPing(t *testing.T) {
 		respondEphemeralFunc = prev
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil, nil)
 	handler(nil, commandInteraction(pingCommandName, nil))
 
 	if len(messages) != 1 || messages[0] != "pong" {
@@ -183,7 +184,7 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil, nil)
 	interaction := commandInteraction("status", []*discordgo.ApplicationCommandInteractionDataOption{{Name: "duration", Value: " 30m "}})
 	interaction.Interaction.Member = &discordgo.Member{User: &discordgo.User{ID: "u-123"}}
 	interaction.Interaction.GuildID = "g-456"
@@ -216,7 +217,7 @@ func TestInteractionHandlerRespondsWhenCommandUnavailable(t *testing.T) {
 		respondEphemeralFunc = prev
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -254,7 +255,7 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -280,7 +281,7 @@ func TestInteractionHandlerRespondsWhenCommandsAreSyncing(t *testing.T) {
 	runtime := newBridgeRuntime()
 	runtime.markSyncStarted()
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -307,23 +308,26 @@ func TestInteractionHandlerRoutesButtonCallbacks(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	customID := encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m:study")
+	callbacks := newActionCallbackRegistry(time.Hour)
+	callbackURL := "http://127.0.0.1:8092/callback"
+	customID := encodeNotifyActionCustomID(callbacks.Register(callbackURL), "snooze_10m:study")
 	message := &discordgo.Message{
 		ID: "m-1",
 		Embeds: []*discordgo.MessageEmbed{{
-			Title: "[BEEMINDER-SPOKE] GOAL REMINDER",
-			URL:   "https://example.com/goal",
-			Color: notifySeverityColors[hubnotify.SeverityWarning],
+			Title:  "[BEEMINDER-SPOKE] GOAL REMINDER",
+			URL:    "https://example.com/goal",
+			Color:  notifySeverityColors[hubnotify.SeverityWarning],
+			Footer: &discordgo.MessageEmbedFooter{Text: encodeNotifyFooter("beeminder-spoke", "goal-reminder")},
 		}},
 		Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{Label: "Snooze 10m", Style: discordgo.SecondaryButton, CustomID: customID},
 		}}},
 	}
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil, dispatcher)
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, dispatcher, callbacks)
 	handler(nil, componentInteraction(customID, message))
 
-	if dispatcher.callbackURL != "http://127.0.0.1:8092/callback" {
+	if dispatcher.callbackURL != callbackURL {
 		t.Fatalf("unexpected callback URL: %q", dispatcher.callbackURL)
 	}
 	if dispatcher.payload.Action.ID != "snooze_10m:study" || dispatcher.payload.Action.Label != "Snooze 10m" {
@@ -346,7 +350,7 @@ func TestInteractionHandlerRejectsInvalidButtonCustomID(t *testing.T) {
 	}
 	t.Cleanup(func() { respondEphemeralFunc = prevRespond })
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil, &fakeActionCallbackDispatcher{})
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, &fakeActionCallbackDispatcher{}, newActionCallbackRegistry(time.Hour))
 	handler(nil, componentInteraction("bad-custom-id", &discordgo.Message{}))
 
 	if len(messages) != 1 || messages[0] != "That action is invalid." {
