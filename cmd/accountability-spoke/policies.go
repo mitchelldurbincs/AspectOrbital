@@ -194,15 +194,24 @@ func (c policyCatalog) Evaluate(ctx context.Context, commitment accountability.C
 		if c.vision == nil {
 			return proofEvaluation{}, errors.New("openai_vision is not configured")
 		}
-		if strings.TrimSpace(attachment.URL) == "" {
+		attachmentURL := strings.TrimSpace(attachment.URL)
+		if attachmentURL == "" {
 			return proofEvaluation{Pass: false, Reason: "this commitment requires an attachment with a URL"}, nil
+		}
+		validatedURL, err := validatePublicImageURL(attachmentURL)
+		if err != nil {
+			return proofEvaluation{Pass: false, Reason: fmt.Sprintf("invalid proof attachment URL: %v", err)}, nil
+		}
+		contentType := strings.ToLower(strings.TrimSpace(attachment.ContentType))
+		if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+			return proofEvaluation{Pass: false, Reason: fmt.Sprintf("proof attachment content type must be image/* (got %q)", attachment.ContentType)}, nil
 		}
 		prompt := strings.TrimSpace(fmt.Sprint(normalized["prompt"]))
 		minConfidence, err := floatFromAny(normalized["minConfidence"])
 		if err != nil {
 			return proofEvaluation{}, err
 		}
-		result, err := c.vision.EvaluateImage(ctx, attachment.URL, prompt)
+		result, err := c.vision.EvaluateImage(ctx, validatedURL, prompt)
 		if err != nil {
 			return proofEvaluation{}, fmt.Errorf("openai vision check failed: %w", err)
 		}

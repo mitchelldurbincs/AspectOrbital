@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strings"
 )
 
@@ -110,16 +113,75 @@ func (c *openAIVisionClient) EvaluateImage(ctx context.Context, imageURL, prompt
 }
 
 func validateEvaluateImageInput(imageURL, prompt string) (string, string, error) {
-	imageURL = strings.TrimSpace(imageURL)
-	prompt = strings.TrimSpace(prompt)
-	if imageURL == "" {
-		return "", "", fmt.Errorf("image URL is required")
+	var err error
+	imageURL, err = validatePublicImageURL(imageURL)
+	if err != nil {
+		return "", "", err
 	}
+	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return "", "", fmt.Errorf("prompt is required")
 	}
 	return imageURL, prompt, nil
 }
+
+func validatePublicImageURL(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", fmt.Errorf("image URL is required")
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil || parsed == nil {
+		return "", fmt.Errorf("image URL is invalid")
+	}
+	if !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
+		return "", fmt.Errorf("image URL must be an https URL")
+	}
+	if strings.TrimSpace(parsed.Host) == "" || strings.TrimSpace(parsed.Hostname()) == "" {
+		return "", fmt.Errorf("image URL host is required")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("image URL must not include credentials")
+	}
+
+	host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	if host == "localhost" {
+		return "", fmt.Errorf("image URL host must be public")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return "", fmt.Errorf("image URL host must be public")
+		}
+	}
+
+	return parsed.String(), nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+
+	addr, err := netip.ParseAddr(ip.String())
+	if err == nil {
+		if addr.Is6() {
+			if addr.Is6() && addr.Is4In6() {
+				addr = addr.Unmap()
+			}
+			if addr.Is6() && addr.IsLinkLocalUnicast() {
+				return false
+			}
+		}
+		if carrierGradeNATPrefix.Contains(addr) {
+			return false
+		}
+	}
+
+	return true
+}
+
+var carrierGradeNATPrefix = netip.MustParsePrefix("100.64.0.0/10")
 
 func (c *openAIVisionClient) buildChatCompletionRequestBody(imageURL, prompt string) ([]byte, error) {
 	body := chatCompletionRequest{

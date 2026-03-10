@@ -2,12 +2,30 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"personal-infrastructure/pkg/accountability"
 )
+
+type stubVisionEvaluator struct {
+	calls      int
+	match      bool
+	confidence float64
+	reason     string
+	err        error
+}
+
+func (s *stubVisionEvaluator) EvaluateImage(context.Context, string, string) (visionEvaluation, error) {
+	s.calls++
+	if s.err != nil {
+		return visionEvaluation{}, s.err
+	}
+	return visionEvaluation{Match: s.match, Confidence: s.confidence, Reason: s.reason}, nil
+}
 
 func TestLoadPolicyCatalogAndResolveDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policies.json")
@@ -71,5 +89,89 @@ func TestLoadPolicyCatalogFailsWhenOpenAIPresetWithoutClient(t *testing.T) {
 	_, err := loadPolicyCatalog(path, nil)
 	if err == nil {
 		t.Fatal("expected error when openai_vision preset is configured without OpenAI client")
+	}
+}
+
+func TestPolicyEvaluateOpenAIVisionRejectsInvalidAttachmentURL(t *testing.T) {
+	vision := &stubVisionEvaluator{match: true, confidence: 1}
+	catalog := policyCatalog{vision: vision}
+
+	evaluation, err := catalog.Evaluate(
+		context.Background(),
+		accountability.Commitment{PolicyEngine: "openai_vision", PolicyConfig: `{"prompt":"inside a car","minConfidence":0.8}`},
+		accountability.AttachmentMetadata{URL: "data:image/png;base64,AAAA", ContentType: "image/png"},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("expected no internal error, got: %v", err)
+	}
+	if evaluation.Pass {
+		t.Fatal("expected invalid attachment URL to fail policy")
+	}
+	if !strings.Contains(strings.ToLower(evaluation.Reason), "invalid proof attachment url") {
+		t.Fatalf("unexpected failure reason: %q", evaluation.Reason)
+	}
+	if vision.calls != 0 {
+		t.Fatalf("expected no vision calls for invalid URL, got %d", vision.calls)
+	}
+}
+
+func TestPolicyEvaluateOpenAIVisionRejectsNonImageContentType(t *testing.T) {
+	vision := &stubVisionEvaluator{match: true, confidence: 1}
+	catalog := policyCatalog{vision: vision}
+
+	evaluation, err := catalog.Evaluate(
+		context.Background(),
+		accountability.Commitment{PolicyEngine: "openai_vision", PolicyConfig: `{"prompt":"inside a car","minConfidence":0.8}`},
+		accountability.AttachmentMetadata{URL: "https://cdn.discordapp.com/proof.txt", ContentType: "text/plain"},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("expected no internal error, got: %v", err)
+	}
+	if evaluation.Pass {
+		t.Fatal("expected non-image content type to fail policy")
+	}
+	if !strings.Contains(evaluation.Reason, "content type") {
+		t.Fatalf("unexpected failure reason: %q", evaluation.Reason)
+	}
+	if vision.calls != 0 {
+		t.Fatalf("expected no vision calls for invalid content type, got %d", vision.calls)
+	}
+}
+
+func TestPolicyEvaluateOpenAIVisionCallsVisionForValidAttachment(t *testing.T) {
+	vision := &stubVisionEvaluator{match: true, confidence: 0.91, reason: "looks good"}
+	catalog := policyCatalog{vision: vision}
+
+	evaluation, err := catalog.Evaluate(
+		context.Background(),
+		accountability.Commitment{PolicyEngine: "openai_vision", PolicyConfig: `{"prompt":"inside a car","minConfidence":0.8}`},
+		accountability.AttachmentMetadata{URL: "https://cdn.discordapp.com/attachments/1/2/proof.png", ContentType: "image/png"},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !evaluation.Pass {
+		t.Fatalf("expected policy to pass, got: %#v", evaluation)
+	}
+	if vision.calls != 1 {
+		t.Fatalf("expected one vision call, got %d", vision.calls)
+	}
+}
+
+func TestPolicyEvaluateOpenAIVisionPropagatesVisionError(t *testing.T) {
+	vision := &stubVisionEvaluator{err: fmt.Errorf("boom")}
+	catalog := policyCatalog{vision: vision}
+
+	_, err := catalog.Evaluate(
+		context.Background(),
+		accountability.Commitment{PolicyEngine: "openai_vision", PolicyConfig: `{"prompt":"inside a car","minConfidence":0.8}`},
+		accountability.AttachmentMetadata{URL: "https://cdn.discordapp.com/attachments/1/2/proof.png", ContentType: "image/png"},
+		"",
+	)
+	if err == nil || !strings.Contains(err.Error(), "openai vision check failed") {
+		t.Fatalf("unexpected vision error: %v", err)
 	}
 }

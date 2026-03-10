@@ -58,6 +58,38 @@ func TestValidateEvaluateImageInput(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "prompt is required") {
 		t.Fatalf("unexpected missing prompt error: %v", err)
 	}
+
+	rejectCases := []struct {
+		name string
+		url  string
+	}{
+		{name: "reject data URI", url: "data:image/png;base64,AAAA"},
+		{name: "reject http scheme", url: "http://example.com/x.png"},
+		{name: "reject missing host", url: "https://"},
+		{name: "reject localhost", url: "https://localhost/x.png"},
+		{name: "reject loopback IPv4", url: "https://127.0.0.1/x.png"},
+		{name: "reject private class a", url: "https://10.0.0.2/x.png"},
+		{name: "reject private class b", url: "https://172.16.0.3/x.png"},
+		{name: "reject private class c", url: "https://192.168.1.4/x.png"},
+		{name: "reject carrier grade nat", url: "https://100.64.0.1/x.png"},
+	}
+
+	for _, tc := range rejectCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := validateEvaluateImageInput(tc.url, "photo of desk")
+			if err == nil {
+				t.Fatalf("expected error for image URL %q", tc.url)
+			}
+		})
+	}
+
+	imageURL, _, err = validateEvaluateImageInput("https://cdn.discordapp.com/attachments/1/2/proof.png", "ok")
+	if err != nil {
+		t.Fatalf("expected public https URL to pass, got: %v", err)
+	}
+	if imageURL != "https://cdn.discordapp.com/attachments/1/2/proof.png" {
+		t.Fatalf("unexpected normalized public URL: %q", imageURL)
+	}
 }
 
 func TestParseCompletionContent(t *testing.T) {

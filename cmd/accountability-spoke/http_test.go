@@ -28,3 +28,33 @@ func TestParseDeadlineClockTimeUsesSameDayWhenFuture(t *testing.T) {
 		t.Fatalf("unexpected deadline\nwant: %s\ngot:  %s", want.Format(time.RFC3339), deadline.Format(time.RFC3339))
 	}
 }
+
+func TestParseAttachmentSupportsContentTypeAliasesAndSize(t *testing.T) {
+	attachment := parseAttachment(map[string]any{
+		"id":           " a1 ",
+		"filename":     " proof.png ",
+		"url":          " https://cdn.discordapp.com/proof.png ",
+		"content_type": " image/png ",
+		"size":         42.0,
+	})
+	if attachment.ID != "a1" {
+		t.Fatalf("unexpected id: %q", attachment.ID)
+	}
+	if attachment.Filename != "proof.png" {
+		t.Fatalf("unexpected filename: %q", attachment.Filename)
+	}
+	if attachment.URL != "https://cdn.discordapp.com/proof.png" {
+		t.Fatalf("unexpected URL: %q", attachment.URL)
+	}
+	if attachment.ContentType != "image/png" {
+		t.Fatalf("unexpected content type: %q", attachment.ContentType)
+	}
+	if attachment.Size != 42 {
+		t.Fatalf("unexpected size: %d", attachment.Size)
+	}
+
+	attachment = parseAttachment(map[string]any{"contentType": "image/jpeg"})
+	if attachment.ContentType != "image/jpeg" {
+		t.Fatalf("expected camelCase contentType fallback, got: %q", attachment.ContentType)
+	}
+}

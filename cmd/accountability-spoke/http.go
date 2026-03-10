@@ -86,6 +86,12 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attachment := parseAttachment(req.Options["proof"])
+		if normalizePolicyEngine(active.PolicyEngine) == policyEngineOpenAIVision && strings.TrimSpace(attachment.URL) != "" {
+			if _, err := validatePublicImageURL(attachment.URL); err != nil {
+				http.Error(w, fmt.Sprintf("invalid proof attachment URL: %v", err), http.StatusBadRequest)
+				return
+			}
+		}
 		proofText := mapOptionString(req.Options, "text")
 		evaluation, err := a.policies.Evaluate(r.Context(), active, attachment, proofText)
 		if err != nil {
@@ -192,7 +198,17 @@ func parseDeadline(now time.Time, raw string) (time.Time, error) {
 
 func parseAttachment(raw any) accountability.AttachmentMetadata {
 	if m, ok := raw.(map[string]any); ok {
-		return accountability.AttachmentMetadata{ID: mapOptionString(m, "id"), Filename: mapOptionString(m, "filename"), URL: mapOptionString(m, "url"), ContentType: mapOptionString(m, "content_type")}
+		contentType := mapOptionString(m, "content_type")
+		if contentType == "" {
+			contentType = mapOptionString(m, "contentType")
+		}
+		size := 0
+		if rawSize, ok := m["size"]; ok {
+			if parsedSize, err := intFromAny(rawSize); err == nil && parsedSize >= 0 {
+				size = parsedSize
+			}
+		}
+		return accountability.AttachmentMetadata{ID: mapOptionString(m, "id"), Filename: mapOptionString(m, "filename"), URL: mapOptionString(m, "url"), ContentType: contentType, Size: size}
 	}
 	if raw == nil {
 		return accountability.AttachmentMetadata{}
