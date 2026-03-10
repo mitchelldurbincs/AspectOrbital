@@ -141,7 +141,7 @@ jobs:
           KALSHI_ACCESS_KEY=ci-access-key
           KALSHI_PRIVATE_KEY_PATH=/run/secrets/kalshi-private-key.pem
           KALSHI_MARKET_TICKERS=INX-TEST-1
-          KALSHI_TRIGGER_YES_BID_DOLLARS=0.6000
+          KALSHI_TRIGGER_RULES=INX-TEST-1=0.6000
           KALSHI_AUTO_SELL_ENABLED=false
           KALSHI_DRY_RUN=true
           KALSHI_SUBACCOUNT=0

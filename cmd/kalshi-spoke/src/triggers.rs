@@ -10,7 +10,7 @@ use crate::{
     formatting::format_decimal_4,
     kalshi::KalshiClient,
     models::TickerPayload,
-    state::StateStore,
+    state::{PersistedTriggerRule, StateStore},
     trading::attempt_sell,
 };
 
@@ -36,18 +36,18 @@ pub(crate) async fn process_ticker_update(
         .record_ticker_price(market_ticker, yes_bid_str.clone())
         .await;
 
-    let threshold = resolve_threshold_yes_bid_dollars_for_update(config, persisted, market_ticker).await?;
+    let rule = persisted.active_rule_for_market(market_ticker).await;
+    let threshold = active_rule_threshold(rule.as_ref())?;
     let is_above = threshold.map(|value| yes_bid >= value).unwrap_or(false);
 
     if !persisted.has_market(market_ticker).await {
         persisted
             .update_market(market_ticker, |state| {
-                state.was_above_threshold = is_above;
                 state.last_yes_bid_dollars = Some(yes_bid_str.clone());
                 state.last_action = Some(if threshold.is_some() {
-                    "initialized market state (trigger-enabled)".to_string()
+                    "initialized market state (rule-enabled)".to_string()
                 } else {
-                    "initialized market state (observe-only: no threshold configured)".to_string()
+                    "initialized market state (observe-only: no rule configured)".to_string()
                 });
             })
             .await?;
@@ -61,22 +61,22 @@ pub(crate) async fn process_ticker_update(
         return Ok(());
     }
 
-    let previous = persisted.market_snapshot(market_ticker).await;
-
     if threshold.is_none() {
         persisted
             .update_market(market_ticker, |state| {
-                state.was_above_threshold = false;
                 state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-                state.last_action = Some("observe-only update (threshold unset)".to_string());
+                state.last_action = Some("observe-only update (rule unset)".to_string());
             })
             .await?;
         return Ok(());
     }
 
+    let Some(rule) = rule else {
+        return Ok(());
+    };
     let threshold = threshold.expect("checked threshold exists");
 
-    if !previous.was_above_threshold && is_above {
+    if !rule.state.was_condition_true && is_above {
         let threshold = format_decimal_4(threshold);
         let trigger_message = format!(
             "[trigger] {} YES bid {} crossed above {}",
@@ -87,7 +87,7 @@ pub(crate) async fn process_ticker_update(
             warn!("failed to deliver trigger alert to discord-hub: {err:#}");
         }
 
-        let mut client_order_id = previous.last_client_order_id.clone();
+        let mut client_order_id = rule.state.last_client_order_id.clone();
         let action_summary = if config.auto_sell_enabled {
             let outcome = attempt_sell(config, kalshi, discord, market_ticker, &threshold).await?;
             if outcome.client_order_id.is_some() {
@@ -99,18 +99,23 @@ pub(crate) async fn process_ticker_update(
         };
 
         persisted
+            .update_rule(&rule.spec.id, |entry| {
+                entry.state.was_condition_true = true;
+                entry.state.last_triggered_at = Some(Utc::now());
+                entry.state.last_client_order_id = client_order_id.clone();
+                entry.state.last_action = Some(action_summary.clone());
+            })
+            .await?;
+        persisted
             .update_market(market_ticker, |state| {
-                state.was_above_threshold = true;
                 state.last_yes_bid_dollars = Some(yes_bid_str.clone());
-                state.last_triggered_at = Some(Utc::now());
-                state.last_client_order_id = client_order_id.clone();
                 state.last_action = Some(action_summary.clone());
             })
             .await?;
         return Ok(());
     }
 
-    if previous.was_above_threshold && !is_above {
+    if rule.state.was_condition_true && !is_above {
         let threshold = format_decimal_4(threshold);
         let rearmed_message = format!(
             "[re-armed] {} YES bid {} dropped below {}",
@@ -122,8 +127,13 @@ pub(crate) async fn process_ticker_update(
         }
 
         persisted
+            .update_rule(&rule.spec.id, |entry| {
+                entry.state.was_condition_true = false;
+                entry.state.last_action = Some("trigger re-armed".to_string());
+            })
+            .await?;
+        persisted
             .update_market(market_ticker, |state| {
-                state.was_above_threshold = false;
                 state.last_yes_bid_dollars = Some(yes_bid_str.clone());
                 state.last_action = Some("trigger re-armed".to_string());
             })
@@ -133,17 +143,9 @@ pub(crate) async fn process_ticker_update(
     Ok(())
 }
 
-pub(crate) async fn resolve_threshold_yes_bid_dollars_for_update(
-    config: &Config,
-    persisted: &StateStore,
-    market_ticker: &str,
-) -> Result<Option<Decimal>> {
-    let from_persisted = persisted
-        .market_threshold_yes_bid_dollars(market_ticker)
-        .await?;
-    if from_persisted.is_some() {
-        return Ok(from_persisted);
+fn active_rule_threshold(rule: Option<&PersistedTriggerRule>) -> Result<Option<Decimal>> {
+    match rule {
+        Some(rule) => Ok(Some(rule.spec.threshold_decimal()?)),
+        None => Ok(None),
     }
-
-    Ok(config.market_threshold_decimal(market_ticker))
 }

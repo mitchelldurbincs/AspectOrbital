@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::rules::TriggerRule;
 use crate::{app::RuntimeSnapshot, config::PublicConfig, state::PersistedState};
 
 #[derive(Debug, Serialize)]
@@ -69,17 +70,17 @@ pub(crate) struct CommandResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ThresholdsSummary {
+pub(crate) struct RulesSummary {
     pub(crate) total_markets: usize,
     pub(crate) trigger_enabled_markets: usize,
     pub(crate) observe_only_markets: usize,
-    pub(crate) markets: Vec<MarketThresholdView>,
+    pub(crate) markets: Vec<MarketRuleView>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct MarketThresholdView {
+pub(crate) struct MarketRuleView {
     pub(crate) ticker: String,
-    pub(crate) threshold_yes_bid_dollars: Option<String>,
+    pub(crate) rule: Option<TriggerRule>,
     pub(crate) mode: &'static str,
     pub(crate) last_yes_bid_dollars: Option<String>,
 }

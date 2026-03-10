@@ -7,9 +7,9 @@ use tracing::warn;
 
 use crate::{
     app::AppState,
-    formatting::{format_decimal_2, format_decimal_4, format_market_lines, truncate_message},
+    formatting::{format_decimal_2, format_market_lines, truncate_message},
     kalshi::{MarketDetails, MarketPositionSnapshot},
-    models::{MarketPositionView, MarketThresholdView, PositionsSummary, StatusResponse, ThresholdsSummary},
+    models::{MarketPositionView, MarketRuleView, PositionsSummary, RulesSummary, StatusResponse},
 };
 
 const COMMAND_MESSAGE_MAX_CHARS: usize = 1800;
@@ -100,7 +100,10 @@ pub(crate) fn build_positions_message(summary: &PositionsSummary) -> String {
         );
     }
 
-    let mut lines = vec![format!("Kalshi positions (subaccount {})", summary.subaccount)];
+    let mut lines = vec![format!(
+        "Kalshi positions (subaccount {})",
+        summary.subaccount
+    )];
     lines.push(format!(
         "Totals: YES {} | NO {} | markets {}/{}",
         summary.yes_contracts, summary.no_contracts, summary.yes_markets, summary.no_markets
@@ -121,23 +124,28 @@ pub(crate) fn build_positions_message(summary: &PositionsSummary) -> String {
     truncate_message(lines.join("\n"), COMMAND_MESSAGE_MAX_CHARS)
 }
 
-pub(crate) async fn build_thresholds_summary(state: Arc<AppState>) -> Result<ThresholdsSummary> {
+pub(crate) async fn build_rules_summary(state: Arc<AppState>) -> Result<RulesSummary> {
     let persisted = state.persisted.snapshot().await;
     let runtime = state.runtime.snapshot().await;
 
     let mut markets = Vec::with_capacity(state.config.market_tickers.len());
     for ticker in &state.config.market_tickers {
-        let threshold = resolve_threshold_yes_bid_dollars(state.as_ref(), ticker).await?;
+        let rule = persisted
+            .trigger_rules
+            .values()
+            .find(|entry| entry.spec.enabled && entry.spec.matches_market(ticker))
+            .map(|entry| entry.spec.clone());
         let runtime_market = runtime.markets.get(ticker);
+        let mode = if rule.is_some() {
+            "trigger-enabled"
+        } else {
+            "observe-only"
+        };
 
-        markets.push(MarketThresholdView {
+        markets.push(MarketRuleView {
             ticker: ticker.clone(),
-            threshold_yes_bid_dollars: threshold.map(format_decimal_4),
-            mode: if threshold.is_some() {
-                "trigger-enabled"
-            } else {
-                "observe-only"
-            },
+            rule,
+            mode,
             last_yes_bid_dollars: runtime_market
                 .and_then(|entry| entry.last_yes_bid_dollars.clone())
                 .or_else(|| {
@@ -149,12 +157,9 @@ pub(crate) async fn build_thresholds_summary(state: Arc<AppState>) -> Result<Thr
         });
     }
 
-    let trigger_enabled_markets = markets
-        .iter()
-        .filter(|entry| entry.threshold_yes_bid_dollars.is_some())
-        .count();
+    let trigger_enabled_markets = markets.iter().filter(|entry| entry.rule.is_some()).count();
 
-    Ok(ThresholdsSummary {
+    Ok(RulesSummary {
         total_markets: markets.len(),
         trigger_enabled_markets,
         observe_only_markets: markets.len().saturating_sub(trigger_enabled_markets),
@@ -203,36 +208,4 @@ async fn resolve_market_details(
     }
 
     details
-}
-
-async fn resolve_threshold_yes_bid_dollars(
-    state: &AppState,
-    market_ticker: &str,
-) -> Result<Option<Decimal>> {
-    let from_persisted = state
-        .persisted
-        .market_threshold_yes_bid_dollars(market_ticker)
-        .await?;
-    if from_persisted.is_some() {
-        return Ok(from_persisted);
-    }
-
-    Ok(public_market_threshold_decimal(&state.config, market_ticker))
-}
-
-fn public_market_threshold_decimal(
-    config: &crate::config::PublicConfig,
-    market_ticker: &str,
-) -> Option<Decimal> {
-    config
-        .trigger_yes_bid_by_market
-        .get(market_ticker)
-        .and_then(|value| value.parse::<Decimal>().ok())
-        .or_else(|| {
-            config
-                .trigger_yes_bid_by_market
-                .iter()
-                .find(|(ticker, _)| ticker.eq_ignore_ascii_case(market_ticker))
-                .and_then(|(_, threshold)| threshold.parse::<Decimal>().ok())
-        })
 }

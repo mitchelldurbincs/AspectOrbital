@@ -1,6 +1,6 @@
 # kalshi-spoke
 
-`kalshi-spoke` watches Kalshi ticker updates, tracks threshold crossings, and can optionally place a reduce-only sell order when a rule fires.
+`kalshi-spoke` watches Kalshi ticker updates, tracks rule crossings, and can optionally place a reduce-only sell order when a rule fires.
 
 ## Canonical local port map
 
@@ -14,13 +14,24 @@
 
 It also sends alerts through `discord-hub` using `POST /notify`.
 
-## Trigger behavior
+## Rule behavior
 
-- Trigger applies per market when a threshold exists in `KALSHI_TRIGGER_YES_BID_BY_MARKET`.
-- Markets without a threshold stay in observe-only mode (price/status updates still work).
+- Markets in `KALSHI_MARKET_TICKERS` are always subscribed and observed.
+- Trigger rules are optional and bootstrapped from `KALSHI_TRIGGER_RULES` using `TICKER=0.1234` entries.
+- Markets without a rule stay in observe-only mode (price/status updates still work).
 - `yes_bid_dollars` is the **current market YES bid**, not your original entry price.
 - Trigger is edge-based: it fires when crossing from below to above.
 - It re-arms only after price drops below the threshold again.
+
+## Kalshi API alignment
+
+- Current implementation is intentionally YES-only because the ticker websocket feed exposes `yes_bid_dollars` for market updates, and the order API accepts side-specific order fields such as `side=yes` with `yes_price_dollars`.
+- Relevant docs:
+  - WebSocket ticker channel: `https://docs.kalshi.com/websockets/market-ticker.md`
+  - WebSocket connection/subscription flow: `https://docs.kalshi.com/websockets/websocket-connection.md`
+  - Market details endpoint: `https://docs.kalshi.com/api-reference/market/get-market.md`
+  - Create order endpoint: `https://docs.kalshi.com/api-reference/orders/create-order.md`
+- The internal model now uses rules so NO-side support can be added later without another full rewrite.
 
 ## Safety settings
 
@@ -44,7 +55,7 @@ To actually place orders, all three must be true/false in the right combination:
 
 Other common vars:
 
-- `KALSHI_TRIGGER_YES_BID_BY_MARKET` (optional `TICKER=0.1234` pairs, comma-separated)
+- `KALSHI_TRIGGER_RULES` (optional `TICKER=0.1234` pairs, comma-separated; boots YES bid crossing rules)
 - `HUB_NOTIFY_URL`
 - `HUB_NOTIFY_AUTH_TOKEN`
 - `KALSHI_NOTIFY_CHANNEL`
@@ -75,8 +86,34 @@ Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
 
 `kalshi-spoke` now exposes a spoke command catalog consumed by `discord-hub`:
 
-- `kalshi-status` — returns current runtime and persisted trigger state.
+- `kalshi-status` — returns current runtime and persisted rule state.
 - `kalshi-positions` — returns YES/NO contract exposure summary with market titles, prompts, and tickers.
-- `kalshi-thresholds` — returns trigger-enabled vs observe-only mode for tracked markets.
-- `kalshi-threshold-set` — sets trigger threshold for a ticker (`ticker`, `yes_bid_dollars`).
-- `kalshi-threshold-remove` — removes trigger threshold for a ticker (observe-only mode).
+- `kalshi-rules` — returns rule-enabled vs observe-only mode for tracked markets.
+- `kalshi-rule-set` — sets a YES bid crossing rule for a ticker (`ticker`, `threshold_dollars`).
+- `kalshi-rule-remove` — removes a rule for a ticker (observe-only mode).
+
+## Command examples
+
+Show current rule state:
+
+```bash
+curl -X POST http://127.0.0.1:8092/control/command \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"kalshi-rules","context":{"discordUserId":"local-user"}}'
+```
+
+Set a YES bid crossing rule for a tracked ticker:
+
+```bash
+curl -X POST http://127.0.0.1:8092/control/command \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"kalshi-rule-set","context":{"discordUserId":"local-user"},"options":{"ticker":"INX-TEST-1","threshold_dollars":0.6000}}'
+```
+
+Remove a rule and return the market to observe-only mode:
+
+```bash
+curl -X POST http://127.0.0.1:8092/control/command \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"kalshi-rule-remove","context":{"discordUserId":"local-user"},"options":{"ticker":"INX-TEST-1"}}'
+```

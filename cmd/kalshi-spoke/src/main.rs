@@ -6,6 +6,7 @@ mod formatting;
 mod http;
 mod kalshi;
 mod models;
+mod rules;
 mod state;
 mod summaries;
 mod trading;
@@ -42,14 +43,14 @@ async fn main() -> Result<()> {
     let config = Config::load().context("invalid configuration")?;
     let runtime = Arc::new(RuntimeState::new());
     let persisted = Arc::new(StateStore::load(&config.state_file)?);
-    let seeded_thresholds = persisted
-        .seed_thresholds_if_missing(&config.trigger_yes_bid_by_market)
+    let seeded_rules = persisted
+        .bootstrap_rules_if_empty(&config.bootstrap_trigger_rules)
         .await
-        .context("failed to seed persisted threshold config")?;
-    if seeded_thresholds > 0 {
+        .context("failed to bootstrap persisted rule config")?;
+    if seeded_rules > 0 {
         info!(
-            "seeded {} market threshold(s) from KALSHI_TRIGGER_YES_BID_BY_MARKET",
-            seeded_thresholds
+            "bootstrapped {} market rule(s) from KALSHI_TRIGGER_RULES",
+            seeded_rules
         );
     }
 
@@ -94,23 +95,24 @@ async fn main() -> Result<()> {
     let ws_task = if config.enabled {
         let kalshi = kalshi.clone();
 
-        let active_thresholds = persisted
+        let active_rules = persisted
             .snapshot()
             .await
-            .trigger_yes_bid_by_market
-            .keys()
-            .filter(|ticker| {
-                config
-                    .market_tickers
-                    .iter()
-                    .any(|tracked| tracked.eq_ignore_ascii_case(ticker))
+            .trigger_rules
+            .values()
+            .filter(|rule| {
+                rule.spec.enabled
+                    && config
+                        .market_tickers
+                        .iter()
+                        .any(|tracked| tracked.eq_ignore_ascii_case(&rule.spec.ticker))
             })
             .count();
         let online_message = format!(
             "kalshi-spoke online: tickers={} trigger_enabled={} observe_only={} auto_sell={} dry_run={} subaccount={}",
             config.market_tickers.join(","),
-            active_thresholds,
-            config.market_tickers.len().saturating_sub(active_thresholds),
+            active_rules,
+            config.market_tickers.len().saturating_sub(active_rules),
             config.auto_sell_enabled,
             config.dry_run,
             config.subaccount

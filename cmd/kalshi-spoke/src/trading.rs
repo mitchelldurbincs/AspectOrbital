@@ -4,10 +4,7 @@ use rust_decimal::Decimal;
 use tracing::warn;
 
 use crate::{
-    config::Config,
-    discord::DiscordClient,
-    formatting::format_decimal_2,
-    kalshi::KalshiClient,
+    config::Config, discord::DiscordClient, formatting::format_decimal_2, kalshi::KalshiClient,
     models::SellOutcome,
 };
 

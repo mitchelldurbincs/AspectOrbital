@@ -10,9 +10,10 @@ use crate::{
         CommandCatalogResponse, CommandDefinition, CommandOptionDefinition, CommandRequest,
         CommandResponse,
     },
+    rules::TriggerRule,
     summaries::{
-        build_positions_message, build_positions_summary, build_status_response,
-        build_thresholds_summary,
+        build_positions_message, build_positions_summary, build_rules_summary,
+        build_status_response,
     },
 };
 
@@ -20,11 +21,14 @@ const COMMAND_CATALOG_VERSION: u8 = 1;
 const COMMAND_CATALOG_SERVICE: &str = "kalshi-spoke";
 const COMMAND_NAME_STATUS: &str = "kalshi-status";
 const COMMAND_NAME_POSITIONS: &str = "kalshi-positions";
-const COMMAND_NAME_THRESHOLDS: &str = "kalshi-thresholds";
-const COMMAND_NAME_THRESHOLD_SET: &str = "kalshi-threshold-set";
-const COMMAND_NAME_THRESHOLD_REMOVE: &str = "kalshi-threshold-remove";
+const COMMAND_NAME_RULES: &str = "kalshi-rules";
+const COMMAND_NAME_RULE_SET: &str = "kalshi-rule-set";
+const COMMAND_NAME_RULE_REMOVE: &str = "kalshi-rule-remove";
+const COMMAND_NAME_LEGACY_THRESHOLDS: &str = "kalshi-thresholds";
+const COMMAND_NAME_LEGACY_THRESHOLD_SET: &str = "kalshi-threshold-set";
+const COMMAND_NAME_LEGACY_THRESHOLD_REMOVE: &str = "kalshi-threshold-remove";
 const OPTION_NAME_TICKER: &str = "ticker";
-const OPTION_NAME_YES_BID_DOLLARS: &str = "yes_bid_dollars";
+const OPTION_NAME_THRESHOLD_DOLLARS: &str = "threshold_dollars";
 
 pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
     Json(CommandCatalogResponse {
@@ -42,13 +46,13 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
                 options: vec![],
             },
             CommandDefinition {
-                name: COMMAND_NAME_THRESHOLDS,
-                description: "Show trigger-enabled and observe-only market thresholds",
+                name: COMMAND_NAME_RULES,
+                description: "Show trigger-enabled and observe-only market rules",
                 options: vec![],
             },
             CommandDefinition {
-                name: COMMAND_NAME_THRESHOLD_SET,
-                description: "Set YES bid trigger threshold for a market ticker",
+                name: COMMAND_NAME_RULE_SET,
+                description: "Set a YES bid crossing rule for a market ticker",
                 options: vec![
                     CommandOptionDefinition {
                         name: OPTION_NAME_TICKER,
@@ -57,7 +61,7 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
                         required: true,
                     },
                     CommandOptionDefinition {
-                        name: OPTION_NAME_YES_BID_DOLLARS,
+                        name: OPTION_NAME_THRESHOLD_DOLLARS,
                         option_type: "number",
                         description: "Trigger threshold, between 0 and 1",
                         required: true,
@@ -65,8 +69,8 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
                 ],
             },
             CommandDefinition {
-                name: COMMAND_NAME_THRESHOLD_REMOVE,
-                description: "Remove trigger threshold and switch market to observe-only",
+                name: COMMAND_NAME_RULE_REMOVE,
+                description: "Remove a market rule and switch to observe-only",
                 options: vec![CommandOptionDefinition {
                     name: OPTION_NAME_TICKER,
                     option_type: "string",
@@ -78,9 +82,9 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
         command_names: vec![
             COMMAND_NAME_STATUS.to_string(),
             COMMAND_NAME_POSITIONS.to_string(),
-            COMMAND_NAME_THRESHOLDS.to_string(),
-            COMMAND_NAME_THRESHOLD_SET.to_string(),
-            COMMAND_NAME_THRESHOLD_REMOVE.to_string(),
+            COMMAND_NAME_RULES.to_string(),
+            COMMAND_NAME_RULE_SET.to_string(),
+            COMMAND_NAME_RULE_REMOVE.to_string(),
         ],
     })
 }
@@ -133,12 +137,12 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_THRESHOLDS => {
-            let summary = build_thresholds_summary(state)
+        COMMAND_NAME_RULES | COMMAND_NAME_LEGACY_THRESHOLDS => {
+            let summary = build_rules_summary(state)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
             let message = format!(
-                "Kalshi thresholds: trigger-enabled={} observe-only={} total={}",
+                "Kalshi rules: trigger-enabled={} observe-only={} total={}",
                 summary.trigger_enabled_markets,
                 summary.observe_only_markets,
                 summary.total_markets,
@@ -154,22 +158,26 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_THRESHOLD_SET => {
+        COMMAND_NAME_RULE_SET | COMMAND_NAME_LEGACY_THRESHOLD_SET => {
             let ticker = option_required(&request, OPTION_NAME_TICKER)
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
-            let threshold = option_required_decimal(&request, OPTION_NAME_YES_BID_DOLLARS)
+            let threshold = option_required_decimal(&request, OPTION_NAME_THRESHOLD_DOLLARS)
+                .or_else(|_| option_required_decimal(&request, "yes_bid_dollars"))
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
 
             if threshold <= Decimal::ZERO || threshold >= Decimal::ONE {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    "yes_bid_dollars must be between 0 and 1".to_string(),
+                    "threshold_dollars must be between 0 and 1".to_string(),
                 ));
             }
 
+            let rule = TriggerRule::yes_bid_crosses_above(&ticker, threshold)
+                .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+
             state
                 .persisted
-                .set_market_threshold_yes_bid_dollars(&ticker, threshold)
+                .set_yes_bid_rule(rule)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
@@ -180,19 +188,19 @@ pub(crate) async fn control_command(
                 .any(|entry| entry.eq_ignore_ascii_case(&ticker));
             let message = if tracked {
                 format!(
-                    "Threshold set for {}: yes_bid_dollars >= {} (trigger-enabled).",
+                    "Rule set for {}: yes bid crosses above {} (trigger-enabled).",
                     ticker,
                     format_decimal_4(threshold)
                 )
             } else {
                 format!(
-                    "Threshold stored for {}: yes_bid_dollars >= {}. This ticker is not currently in KALSHI_MARKET_TICKERS.",
+                    "Rule stored for {}: yes bid crosses above {}. This ticker is not currently in KALSHI_MARKET_TICKERS.",
                     ticker,
                     format_decimal_4(threshold)
                 )
             };
 
-            let summary = build_thresholds_summary(state)
+            let summary = build_rules_summary(state)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
             let data = serde_json::to_value(summary)
@@ -205,29 +213,29 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_THRESHOLD_REMOVE => {
+        COMMAND_NAME_RULE_REMOVE | COMMAND_NAME_LEGACY_THRESHOLD_REMOVE => {
             let ticker = option_required(&request, OPTION_NAME_TICKER)
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
 
             let removed = state
                 .persisted
-                .remove_market_threshold_yes_bid_dollars(&ticker)
+                .remove_rules_for_market(&ticker)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
             let message = if removed {
                 format!(
-                    "Threshold removed for {}. Market is now observe-only (no trigger actions).",
+                    "Rule removed for {}. Market is now observe-only (no trigger actions).",
                     ticker
                 )
             } else {
                 format!(
-                    "No stored threshold found for {}. Market remains observe-only.",
+                    "No stored rule found for {}. Market remains observe-only.",
                     ticker
                 )
             };
 
-            let summary = build_thresholds_summary(state)
+            let summary = build_rules_summary(state)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
             let data = serde_json::to_value(summary)
@@ -247,15 +255,18 @@ pub(crate) async fn control_command(
                 request.command,
                 COMMAND_NAME_STATUS,
                 COMMAND_NAME_POSITIONS,
-                COMMAND_NAME_THRESHOLDS,
-                COMMAND_NAME_THRESHOLD_SET,
-                COMMAND_NAME_THRESHOLD_REMOVE,
+                COMMAND_NAME_RULES,
+                COMMAND_NAME_RULE_SET,
+                COMMAND_NAME_RULE_REMOVE,
             ),
         )),
     }
 }
 
-fn option_required(request: &CommandRequest, option_name: &str) -> std::result::Result<String, String> {
+fn option_required(
+    request: &CommandRequest,
+    option_name: &str,
+) -> std::result::Result<String, String> {
     let Some(options) = request.options.as_ref() else {
         return Err(format!("options.{} is required", option_name));
     };

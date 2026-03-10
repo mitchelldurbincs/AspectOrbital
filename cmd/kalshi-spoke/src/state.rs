@@ -7,22 +7,37 @@ use std::{
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
+
+use crate::rules::TriggerRule;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedState {
     pub markets: BTreeMap<String, MarketState>,
     #[serde(default)]
-    pub trigger_yes_bid_by_market: BTreeMap<String, String>,
+    pub rules_initialized: bool,
+    #[serde(default)]
+    pub trigger_rules: BTreeMap<String, PersistedTriggerRule>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MarketState {
-    pub was_above_threshold: bool,
     pub last_yes_bid_dollars: Option<String>,
+    pub last_action: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedTriggerRule {
+    pub spec: TriggerRule,
+    #[serde(default)]
+    pub state: TriggerRuleState,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TriggerRuleState {
+    pub was_condition_true: bool,
     pub last_triggered_at: Option<DateTime<Utc>>,
     pub last_client_order_id: Option<String>,
     pub last_action: Option<String>,
@@ -58,121 +73,107 @@ impl StateStore {
         self.state.lock().await.clone()
     }
 
-    pub async fn market_snapshot(&self, market_ticker: &str) -> MarketState {
-        self.state
-            .lock()
-            .await
-            .markets
-            .get(market_ticker)
-            .cloned()
-            .unwrap_or_default()
-    }
-
     pub async fn has_market(&self, market_ticker: &str) -> bool {
         self.state.lock().await.markets.contains_key(market_ticker)
     }
 
-    pub async fn market_threshold_yes_bid_dollars(
+    pub async fn active_rule_for_market(
         &self,
         market_ticker: &str,
-    ) -> Result<Option<Decimal>> {
-        let guard = self.state.lock().await;
-        let raw = guard
-            .trigger_yes_bid_by_market
-            .get(market_ticker)
+    ) -> Option<PersistedTriggerRule> {
+        self.state
+            .lock()
+            .await
+            .trigger_rules
+            .values()
+            .find(|rule| rule.spec.enabled && rule.spec.matches_market(market_ticker))
             .cloned()
-            .or_else(|| {
-                guard
-                    .trigger_yes_bid_by_market
-                    .iter()
-                    .find(|(ticker, _)| ticker.eq_ignore_ascii_case(market_ticker))
-                    .map(|(_, threshold)| threshold.clone())
-            });
-
-        let Some(value) = raw else {
-            return Ok(None);
-        };
-
-        let parsed = value.trim().parse::<Decimal>().with_context(|| {
-            format!(
-                "invalid persisted threshold {:?} for {}",
-                value, market_ticker
-            )
-        })?;
-
-        Ok(Some(parsed))
     }
 
-    pub async fn seed_thresholds_if_missing(
-        &self,
-        thresholds: &BTreeMap<String, Decimal>,
-    ) -> Result<usize> {
+    pub async fn bootstrap_rules_if_empty(&self, rules: &[TriggerRule]) -> Result<usize> {
         let mut guard = self.state.lock().await;
-        let mut inserted = 0usize;
-
-        for (ticker, threshold) in thresholds {
-            if guard
-                .trigger_yes_bid_by_market
-                .keys()
-                .any(|existing| existing.eq_ignore_ascii_case(ticker))
-            {
-                continue;
-            }
-
-            guard
-                .trigger_yes_bid_by_market
-                .insert(ticker.clone(), format!("{:.4}", threshold.round_dp(4)));
-            inserted += 1;
+        if guard.rules_initialized {
+            return Ok(0);
         }
 
-        if inserted > 0 {
-            self.save_locked(&guard)?;
+        guard.rules_initialized = true;
+        for rule in rules {
+            guard.trigger_rules.insert(
+                rule.id.clone(),
+                PersistedTriggerRule {
+                    spec: rule.clone(),
+                    state: TriggerRuleState::default(),
+                },
+            );
         }
 
-        Ok(inserted)
+        self.save_locked(&guard)?;
+
+        Ok(guard.trigger_rules.len())
     }
 
-    pub async fn set_market_threshold_yes_bid_dollars(
-        &self,
-        market_ticker: &str,
-        threshold: Decimal,
-    ) -> Result<()> {
+    pub async fn set_yes_bid_rule(&self, rule: TriggerRule) -> Result<()> {
         let mut guard = self.state.lock().await;
-        let key = guard
-            .trigger_yes_bid_by_market
-            .keys()
-            .find(|existing| existing.eq_ignore_ascii_case(market_ticker))
-            .cloned()
-            .unwrap_or_else(|| market_ticker.to_string());
-
-        guard
-            .trigger_yes_bid_by_market
-            .insert(key, format!("{:.4}", threshold.round_dp(4)));
+        guard.rules_initialized = true;
+        if let Some(existing) = guard.trigger_rules.get_mut(&rule.id) {
+            existing.spec = rule;
+        } else {
+            guard.trigger_rules.insert(
+                rule.id.clone(),
+                PersistedTriggerRule {
+                    spec: rule,
+                    state: TriggerRuleState::default(),
+                },
+            );
+        }
         self.save_locked(&guard)
     }
 
-    pub async fn remove_market_threshold_yes_bid_dollars(
-        &self,
-        market_ticker: &str,
-    ) -> Result<bool> {
+    pub async fn remove_rules_for_market(&self, market_ticker: &str) -> Result<bool> {
         let mut guard = self.state.lock().await;
-        let removed = guard
-            .trigger_yes_bid_by_market
-            .remove(market_ticker)
-            .is_some()
-            || guard
-                .trigger_yes_bid_by_market
-                .keys()
-                .find(|existing| existing.eq_ignore_ascii_case(market_ticker))
-                .cloned()
-                .and_then(|key| guard.trigger_yes_bid_by_market.remove(&key))
-                .is_some();
+        guard.rules_initialized = true;
+        let ids_to_remove = guard
+            .trigger_rules
+            .keys()
+            .filter(|id| {
+                guard
+                    .trigger_rules
+                    .get(*id)
+                    .map(|rule| rule.spec.matches_market(market_ticker))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let removed = !ids_to_remove.is_empty();
+        for id in ids_to_remove {
+            guard.trigger_rules.remove(&id);
+        }
 
         if removed {
             self.save_locked(&guard)?;
         }
 
         Ok(removed)
+    }
+
+    pub async fn update_rule<F>(
+        &self,
+        rule_id: &str,
+        update: F,
+    ) -> Result<Option<PersistedTriggerRule>>
+    where
+        F: FnOnce(&mut PersistedTriggerRule),
+    {
+        let mut guard = self.state.lock().await;
+        let Some(entry) = guard.trigger_rules.get_mut(rule_id) else {
+            return Ok(None);
+        };
+
+        update(entry);
+        let snapshot = entry.clone();
+        self.save_locked(&guard)?;
+        Ok(Some(snapshot))
     }
 
     pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
@@ -241,6 +242,8 @@ fn persist_temp_file(temp_file: NamedTempFile, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::TriggerRule;
+    use rust_decimal::Decimal;
     use tempfile::tempdir;
 
     #[test]
@@ -253,14 +256,12 @@ mod tests {
 
         runtime
             .block_on(store.update_market("FIRST", |state| {
-                state.was_above_threshold = true;
                 state.last_action = Some("first save".to_string());
             }))
             .expect("first save succeeds");
 
         runtime
             .block_on(store.update_market("SECOND", |state| {
-                state.was_above_threshold = false;
                 state.last_action = Some("second save".to_string());
             }))
             .expect("second save succeeds");
@@ -304,5 +305,35 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(entries, vec!["state.json"]);
+    }
+
+    #[test]
+    fn bootstrap_rules_only_applies_once() {
+        let dir = tempdir().expect("create tempdir");
+        let path = dir.path().join("state.json");
+
+        let store = StateStore::load(&path).expect("load state store");
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+        let rules = vec![
+            TriggerRule::yes_bid_crosses_above("FIRST", Decimal::new(60, 2)).expect("rule builds"),
+        ];
+
+        let inserted = runtime
+            .block_on(store.bootstrap_rules_if_empty(&rules))
+            .expect("bootstrap succeeds");
+        assert_eq!(inserted, 1);
+
+        runtime
+            .block_on(store.remove_rules_for_market("FIRST"))
+            .expect("remove succeeds");
+
+        let inserted_again = runtime
+            .block_on(store.bootstrap_rules_if_empty(&rules))
+            .expect("second bootstrap succeeds");
+        assert_eq!(inserted_again, 0);
+
+        let snapshot = runtime.block_on(store.snapshot());
+        assert!(snapshot.trigger_rules.is_empty());
+        assert!(snapshot.rules_initialized);
     }
 }

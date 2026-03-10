@@ -3,12 +3,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use tokio::{
-    sync::watch,
-    time::sleep,
-};
+use tokio::{sync::watch, time::sleep};
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{warn, info};
+use tracing::{info, warn};
 
 use crate::{
     app::RuntimeState,
@@ -184,9 +181,10 @@ async fn handle_ws_text(
             }
         }
         "error" => {
-            let envelope: WsErrorEnvelope = serde_json::from_value(value).unwrap_or(WsErrorEnvelope {
-                msg: WsErrorMessage::default(),
-            });
+            let envelope: WsErrorEnvelope =
+                serde_json::from_value(value).unwrap_or(WsErrorEnvelope {
+                    msg: WsErrorMessage::default(),
+                });
             let code = envelope.msg.code.unwrap_or(-1);
             let message = envelope
                 .msg
