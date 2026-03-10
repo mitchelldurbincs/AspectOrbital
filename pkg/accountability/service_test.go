@@ -3,6 +3,7 @@ package accountability
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,6 +78,9 @@ func TestDeadlineTransitionMarksOverdue(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected no active commitment after expiry, got %#v", got)
 	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after expiry, got %v", err)
+	}
 }
 
 func TestProofHandlingIsIdempotent(t *testing.T) {
@@ -100,6 +104,8 @@ func TestProofHandlingIsIdempotent(t *testing.T) {
 
 	if _, err := svc.SubmitProof(context.Background(), "u1", ProofSubmission{Attachment: meta, Text: "done"}); err == nil {
 		t.Fatal("expected second proof submit to fail without active commitment")
+	} else if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 
@@ -127,6 +133,71 @@ func TestLateProofMarksCommitmentFailedWithoutExpirySweep(t *testing.T) {
 	}
 	if _, err := svc.StatusForUser(context.Background(), "u1"); err == nil {
 		t.Fatal("expected no active commitment after late proof failure")
+	} else if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestCancelReturnsNotFoundAfterExpiry(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 0)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if _, err := svc.ExpireOverdue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Cancel(context.Background(), "u1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSnoozeReturnsNotFoundAfterExpiry(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 0)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if _, err := svc.ExpireOverdue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Snooze(context.Background(), "u1", time.Minute, time.Hour); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSubmitProofReturnsNotFoundAfterExpiry(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 0)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "write", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if _, err := svc.ExpireOverdue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.SubmitProof(context.Background(), "u1", ProofSubmission{Text: "done"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 

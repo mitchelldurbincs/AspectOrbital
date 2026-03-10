@@ -2,54 +2,30 @@ package accountability
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 )
 
 func (s *Service) ExpireOverdue(ctx context.Context) (int64, error) {
+	ctx = contextOrBackground(ctx)
 	now := s.now()
 	cutoff := now.Add(-s.expiryGrace)
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM commitments WHERE status='pending' AND deadline <= ?;`, ts(cutoff))
+	result, err := s.db.ExecContext(ctx, `UPDATE commitments SET status='failed',updated_at=? WHERE status='pending' AND deadline <= ?;`, ts(now), ts(cutoff))
 	if err != nil {
 		return 0, err
 	}
-
-	ids := make([]int64, 0)
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return 0, err
-	}
-	if err := rows.Close(); err != nil {
-		return 0, err
-	}
-
-	var expired int64
-	for _, id := range ids {
-		if _, err := s.db.ExecContext(ctx, `UPDATE commitments SET status='failed',updated_at=? WHERE id=? AND status='pending';`, ts(now), id); err != nil {
-			return 0, err
-		}
-		expired++
-	}
-	return expired, nil
+	return result.RowsAffected()
 }
 
 func (s *Service) OverdueNeedingReminder(ctx context.Context, reminderInterval time.Duration) ([]Commitment, error) {
 	if reminderInterval <= 0 {
 		return nil, errors.New("reminder interval must be positive")
 	}
+	ctx = contextOrBackground(ctx)
 	now := s.now()
 	earliestReminder := now.Add(-reminderInterval)
 
-	var rows *sql.Rows
+	var rows commitmentRows
 	var err error
 	if s.expiryGrace > 0 {
 		rows, err = s.db.QueryContext(
@@ -103,8 +79,16 @@ func (s *Service) MarkReminderSent(ctx context.Context, commitmentID int64) erro
 	if commitmentID <= 0 {
 		return errors.New("commitment id must be positive")
 	}
+	ctx = contextOrBackground(ctx)
 	_, err := s.db.ExecContext(ctx, `UPDATE commitments SET last_reminder_at=? WHERE id=? AND status='pending';`, ts(s.now()), commitmentID)
 	return err
+}
+
+type commitmentRows interface {
+	Close() error
+	Err() error
+	Next() bool
+	Scan(dest ...any) error
 }
 
 func (s *Service) StartExpiryLoop(ctx context.Context) {
