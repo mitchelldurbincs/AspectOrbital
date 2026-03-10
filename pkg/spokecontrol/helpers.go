@@ -1,7 +1,9 @@
 package spokecontrol
 
 import (
+	"crypto/subtle"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -18,6 +20,22 @@ func ValidateDiscordUser(req Request) error {
 		return fmt.Errorf("context.discordUserId is required")
 	}
 	return nil
+}
+
+func IsAuthorized(r *http.Request, expectedToken string) bool {
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	parts := strings.Fields(authorization)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return false
+	}
+
+	providedToken := strings.TrimSpace(parts[1])
+	trimmedExpected := strings.TrimSpace(expectedToken)
+	if providedToken == "" || trimmedExpected == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(providedToken), []byte(trimmedExpected)) == 1
 }
 
 func NormalizeCommand(req Request) string {

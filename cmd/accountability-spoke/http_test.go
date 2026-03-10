@@ -216,20 +216,21 @@ func newTestSpokeApp(t *testing.T) *testSpokeApp {
 	return &testSpokeApp{
 		spokeApp: &spokeApp{
 			cfg: config{
-				DiscordCallbackURL: "http://127.0.0.1:8093/discord/callback",
-				CallbackAuthToken:  "test-callback-token",
-				NotifyChannel:      "accountability",
-				NotifySeverity:     "warning",
-				ReminderInterval:   5 * time.Minute,
-				CommitCommandName:  "commit",
-				ProofCommandName:   "proof",
-				CheckInCommandName: "checkin",
-				StatusCommandName:  "status",
-				CancelCommandName:  "cancel",
-				SnoozeCommandName:  "snooze",
-				CheckInQuietPeriod: 10 * time.Minute,
-				DefaultSnooze:      10 * time.Minute,
-				MaxSnooze:          time.Hour,
+				DiscordCallbackURL:    "http://127.0.0.1:8093/discord/callback",
+				CallbackAuthToken:     "test-callback-token",
+				SpokeCommandAuthToken: "test-command-token",
+				NotifyChannel:         "accountability",
+				NotifySeverity:        "warning",
+				ReminderInterval:      5 * time.Minute,
+				CommitCommandName:     "commit",
+				ProofCommandName:      "proof",
+				CheckInCommandName:    "checkin",
+				StatusCommandName:     "status",
+				CancelCommandName:     "cancel",
+				SnoozeCommandName:     "snooze",
+				CheckInQuietPeriod:    10 * time.Minute,
+				DefaultSnooze:         10 * time.Minute,
+				MaxSnooze:             time.Hour,
 			},
 			service: service,
 			policies: policyCatalog{
@@ -247,9 +248,23 @@ func performCommandRequest(t *testing.T, app *testSpokeApp, body string) *httpte
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-command-token")
 	rec := httptest.NewRecorder()
 	app.handleCommand(rec, req)
 	return rec
+}
+
+func TestHandleCommandRejectsUnauthorizedRequest(t *testing.T) {
+	app := newTestSpokeApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(`{"command":"status","context":{"discordUserId":"u1"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	app.handleCommand(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
 }
 
 func TestHandleCommandStatusWithoutCommitmentReturnsOK(t *testing.T) {

@@ -12,25 +12,26 @@ import (
 )
 
 type config struct {
-	HTTPAddr           string        `envconfig:"ACCOUNTABILITY_SPOKE_HTTP_ADDR" required:"true"`
-	DBPath             string        `envconfig:"ACCOUNTABILITY_DB_PATH" required:"true"`
-	ExpiryPollInterval time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL" required:"true"`
-	ExpiryGracePeriod  time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD" required:"true"`
-	ReminderInterval   time.Duration `envconfig:"ACCOUNTABILITY_REMINDER_INTERVAL" required:"true"`
-	CheckInQuietPeriod time.Duration `envconfig:"ACCOUNTABILITY_CHECKIN_QUIET_PERIOD" required:"true"`
-	HubNotifyURL       string        `envconfig:"HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken string        `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
-	DiscordCallbackURL string        `envconfig:"ACCOUNTABILITY_DISCORD_CALLBACK_URL" required:"true"`
-	CallbackAuthToken  string        `envconfig:"ACCOUNTABILITY_CALLBACK_AUTH_TOKEN" required:"true"`
-	NotifyChannel      string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
-	NotifySeverity     string        `envconfig:"ACCOUNTABILITY_NOTIFY_SEVERITY" required:"true"`
-	PolicyFile         string        `envconfig:"ACCOUNTABILITY_POLICY_FILE" required:"true"`
-	OpenAIBaseURL      string        `envconfig:"ACCOUNTABILITY_OPENAI_BASE_URL" default:"https://api.openai.com/v1"`
-	OpenAIAPIKey       string        `envconfig:"ACCOUNTABILITY_OPENAI_API_KEY"`
-	OpenAIModel        string        `envconfig:"ACCOUNTABILITY_OPENAI_MODEL" default:"gpt-4.1-mini"`
-	OpenAITimeout      time.Duration `envconfig:"ACCOUNTABILITY_OPENAI_TIMEOUT" default:"20s"`
-	DefaultSnooze      time.Duration `envconfig:"ACCOUNTABILITY_DEFAULT_SNOOZE" required:"true"`
-	MaxSnooze          time.Duration `envconfig:"ACCOUNTABILITY_MAX_SNOOZE" required:"true"`
+	HTTPAddr              string        `envconfig:"ACCOUNTABILITY_SPOKE_HTTP_ADDR" required:"true"`
+	DBPath                string        `envconfig:"ACCOUNTABILITY_DB_PATH" required:"true"`
+	ExpiryPollInterval    time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL" required:"true"`
+	ExpiryGracePeriod     time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD" required:"true"`
+	ReminderInterval      time.Duration `envconfig:"ACCOUNTABILITY_REMINDER_INTERVAL" required:"true"`
+	CheckInQuietPeriod    time.Duration `envconfig:"ACCOUNTABILITY_CHECKIN_QUIET_PERIOD" required:"true"`
+	HubNotifyURL          string        `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken    string        `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	SpokeCommandAuthToken string        `envconfig:"SPOKE_COMMAND_AUTH_TOKEN" required:"true"`
+	DiscordCallbackURL    string        `envconfig:"ACCOUNTABILITY_DISCORD_CALLBACK_URL" required:"true"`
+	CallbackAuthToken     string        `envconfig:"ACCOUNTABILITY_CALLBACK_AUTH_TOKEN" required:"true"`
+	NotifyChannel         string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
+	NotifySeverity        string        `envconfig:"ACCOUNTABILITY_NOTIFY_SEVERITY" required:"true"`
+	PolicyFile            string        `envconfig:"ACCOUNTABILITY_POLICY_FILE" required:"true"`
+	OpenAIBaseURL         string        `envconfig:"ACCOUNTABILITY_OPENAI_BASE_URL" default:"https://api.openai.com/v1"`
+	OpenAIAPIKey          string        `envconfig:"ACCOUNTABILITY_OPENAI_API_KEY"`
+	OpenAIModel           string        `envconfig:"ACCOUNTABILITY_OPENAI_MODEL" default:"gpt-4.1-mini"`
+	OpenAITimeout         time.Duration `envconfig:"ACCOUNTABILITY_OPENAI_TIMEOUT" default:"20s"`
+	DefaultSnooze         time.Duration `envconfig:"ACCOUNTABILITY_DEFAULT_SNOOZE" required:"true"`
+	MaxSnooze             time.Duration `envconfig:"ACCOUNTABILITY_MAX_SNOOZE" required:"true"`
 
 	CommitCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_COMMIT" required:"true"`
 	ProofCommandNameRaw   string `envconfig:"ACCOUNTABILITY_COMMAND_PROOF" required:"true"`
@@ -58,6 +59,7 @@ func loadConfig() (config, error) {
 		"ACCOUNTABILITY_DB_PATH":              cfg.DBPath,
 		"HUB_NOTIFY_URL":                      cfg.HubNotifyURL,
 		"HUB_NOTIFY_AUTH_TOKEN":               cfg.HubNotifyAuthToken,
+		"SPOKE_COMMAND_AUTH_TOKEN":            cfg.SpokeCommandAuthToken,
 		"ACCOUNTABILITY_DISCORD_CALLBACK_URL": cfg.DiscordCallbackURL,
 		"ACCOUNTABILITY_CALLBACK_AUTH_TOKEN":  cfg.CallbackAuthToken,
 		"ACCOUNTABILITY_NOTIFY_CHANNEL":       cfg.NotifyChannel,
