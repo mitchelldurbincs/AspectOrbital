@@ -43,7 +43,8 @@ Personal infrastructure automation platform built as a modular microservice ecos
 - CI pipeline for Go/Rust linting, build, tests, and Docker Compose smoke + health checks
 - Hub-and-spoke architecture with HTTP-based service discovery and command registration
 - Discord slash commands for Beeminder reminders (`/started`, `/b-snooze`, `/resume`, `/status`)
-- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/accountability-status`, `/cancel`, `/a-snooze`)
+- Discord slash commands for accountability tracking (`/commit`, `/proof`, `/checkin`, `/status`, `/cancel`, `/a-snooze`)
+- Discord slash commands for finance and Kalshi monitoring (`/finance-status`, `/kalshi-status`, `/kalshi-positions`, `/kalshi-rules`, `/kalshi-rule-set`, `/kalshi-rule-remove`)
 - Configurable reminder engine with snooze, grace periods, and active-session detection
 - Plaid integration for recurring subscription detection and weekly summary generation
 - Kalshi WebSocket price streaming with configurable trigger thresholds
@@ -58,7 +59,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 - **CD deployment** — production/home-server deploy automation is not wired yet
 - **Test coverage** — coverage is still uneven, but automated tests now exist in `discord-hub`, `beeminder-spoke`, `accountability-spoke`, `finance-spoke`, and shared `pkg/` modules
 - **Kubernetes** — stub directory exists under `deployments/kubernetes/` but no active manifests
-- **Accountability spoke** — not yet added to `docker-compose.yml`
+- **Accountability spoke compose wiring** — service exists and is documented, but it is not yet added to `deployments/docker-compose.yml`
 
 ## CI
 
@@ -91,7 +92,7 @@ All services read configuration from the root `.env` file.
 - [INFORMATION_SECURITY_POLICY.md](INFORMATION_SECURITY_POLICY.md) — Baseline security controls and governance
 - [PRIVACY.md](PRIVACY.md) — Privacy policy for Plaid-connected finance workflows
 - [DATA_RETENTION_POLICY.md](DATA_RETENTION_POLICY.md) — Data retention and deletion policy
-- [contracts/spoke-contract-v1.schema.json](contracts/spoke-contract-v1.schema.json) — canonical spoke/hub wire contract
+- [contracts/spoke-contract-v2.schema.json](contracts/spoke-contract-v2.schema.json) — canonical spoke/hub wire contract
 - [cmd/kalshi-spoke/README.md](cmd/kalshi-spoke/README.md) — Kalshi spoke details
 - [cmd/accountability-spoke/README.md](cmd/accountability-spoke/README.md) — Accountability spoke details
 

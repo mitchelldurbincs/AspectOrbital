@@ -16,6 +16,54 @@ It can also send overdue reminder pings to `discord-hub` and lets you snooze rem
 
 Configure values in the repository root `.env`.
 
+Minimum required settings for a local run:
+
+- `ACCOUNTABILITY_SPOKE_HTTP_ADDR` - control API listen address.
+- `ACCOUNTABILITY_DB_PATH` - SQLite DSN or file path.
+- `ACCOUNTABILITY_EXPIRY_POLL_INTERVAL` - overdue sweep interval.
+- `ACCOUNTABILITY_EXPIRY_GRACE_PERIOD` - how long proof can still arrive after the deadline before the commitment is marked failed.
+- `ACCOUNTABILITY_REMINDER_INTERVAL` - minimum spacing between reminder notifications.
+- `ACCOUNTABILITY_CHECKIN_QUIET_PERIOD` - how long `/checkin` pauses reminders.
+- `HUB_NOTIFY_URL` and `HUB_NOTIFY_AUTH_TOKEN` - hub notification endpoint and bearer token.
+- `ACCOUNTABILITY_DISCORD_CALLBACK_URL` and `ACCOUNTABILITY_CALLBACK_AUTH_TOKEN` - callback endpoint and bearer token for reminder action buttons.
+- `ACCOUNTABILITY_NOTIFY_CHANNEL` and `ACCOUNTABILITY_NOTIFY_SEVERITY` - default target for overdue reminders.
+- `ACCOUNTABILITY_POLICY_FILE` - JSON policy catalog path.
+- `ACCOUNTABILITY_DEFAULT_SNOOZE` and `ACCOUNTABILITY_MAX_SNOOZE` - slash-command snooze defaults and upper bound.
+- `ACCOUNTABILITY_COMMAND_*` - command-name overrides; defaults in `.env.example` are `commit`, `proof`, `checkin`, `status`, `cancel`, and `a-snooze`.
+
+Optional OpenAI settings are only needed for `openai_vision` presets:
+
+- `ACCOUNTABILITY_OPENAI_API_KEY`
+- `ACCOUNTABILITY_OPENAI_BASE_URL`
+- `ACCOUNTABILITY_OPENAI_MODEL`
+- `ACCOUNTABILITY_OPENAI_TIMEOUT`
+
+Minimal example:
+
+```env
+ACCOUNTABILITY_SPOKE_HTTP_ADDR=127.0.0.1:8093
+ACCOUNTABILITY_DB_PATH=file:accountability.db?_pragma=busy_timeout(5000)
+ACCOUNTABILITY_EXPIRY_POLL_INTERVAL=45s
+ACCOUNTABILITY_EXPIRY_GRACE_PERIOD=12h
+ACCOUNTABILITY_REMINDER_INTERVAL=5m
+ACCOUNTABILITY_CHECKIN_QUIET_PERIOD=10m
+HUB_NOTIFY_URL=http://127.0.0.1:8080/notify
+HUB_NOTIFY_AUTH_TOKEN=replace-with-long-random-token
+ACCOUNTABILITY_DISCORD_CALLBACK_URL=http://127.0.0.1:8093/discord/callback
+ACCOUNTABILITY_CALLBACK_AUTH_TOKEN=replace-with-long-random-token
+ACCOUNTABILITY_NOTIFY_CHANNEL=accountability
+ACCOUNTABILITY_NOTIFY_SEVERITY=warning
+ACCOUNTABILITY_POLICY_FILE=cmd/accountability-spoke/policies.json
+ACCOUNTABILITY_DEFAULT_SNOOZE=10m
+ACCOUNTABILITY_MAX_SNOOZE=60m
+ACCOUNTABILITY_COMMAND_COMMIT=commit
+ACCOUNTABILITY_COMMAND_PROOF=proof
+ACCOUNTABILITY_COMMAND_CHECKIN=checkin
+ACCOUNTABILITY_COMMAND_STATUS=status
+ACCOUNTABILITY_COMMAND_CANCEL=cancel
+ACCOUNTABILITY_COMMAND_SNOOZE=a-snooze
+```
+
 ```bash
 go run ./cmd/accountability-spoke
 ```
@@ -27,9 +75,11 @@ Default command names are configurable with `ACCOUNTABILITY_COMMAND_*` env vars.
 - `/commit deadline:"..." [task:"..."] [preset:"..."]`
 - `/proof [proof:<attachment>] [text:"..."]`
 - `/checkin text:"..."`
-- `/accountability-status`
+- `/status`
 - `/cancel`
 - `/a-snooze [duration:"10m"]`
+
+Reminder action buttons POST to `/discord/callback` and require `Authorization: Bearer <ACCOUNTABILITY_CALLBACK_AUTH_TOKEN>`.
 
 Deadline input supports:
 

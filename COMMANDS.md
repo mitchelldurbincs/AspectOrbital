@@ -32,9 +32,9 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 - `/checkin` — record that you're actively working on your commitment.
   - options:
     - `text` (string, required)
+- `/status` — show your active commitment.
 - `/a-snooze` — snooze reminders for your active commitment.
   - option: `duration` (string, optional; example `10m`)
-- `/accountability-status` — show your active commitment.
 - `/cancel` — cancel your active commitment.
 
 ## `finance-spoke` (discovered via `/control/commands`)
