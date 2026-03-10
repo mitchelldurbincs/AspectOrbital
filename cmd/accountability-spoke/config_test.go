@@ -18,6 +18,8 @@ func clearAccountabilityEnv(t *testing.T) {
 		"ACCOUNTABILITY_CHECKIN_QUIET_PERIOD",
 		"HUB_NOTIFY_URL",
 		"HUB_NOTIFY_AUTH_TOKEN",
+		"ACCOUNTABILITY_DISCORD_CALLBACK_URL",
+		"ACCOUNTABILITY_CALLBACK_AUTH_TOKEN",
 		"ACCOUNTABILITY_NOTIFY_CHANNEL",
 		"ACCOUNTABILITY_NOTIFY_SEVERITY",
 		"ACCOUNTABILITY_POLICY_FILE",
@@ -49,6 +51,8 @@ func setAccountabilityRequiredEnv(t *testing.T) {
 	t.Setenv("ACCOUNTABILITY_CHECKIN_QUIET_PERIOD", "10m")
 	t.Setenv("HUB_NOTIFY_URL", "http://127.0.0.1:8080/notify")
 	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
+	t.Setenv("ACCOUNTABILITY_DISCORD_CALLBACK_URL", "http://127.0.0.1:8093/discord/callback")
+	t.Setenv("ACCOUNTABILITY_CALLBACK_AUTH_TOKEN", "test-callback-token")
 	t.Setenv("ACCOUNTABILITY_NOTIFY_CHANNEL", "accountability")
 	t.Setenv("ACCOUNTABILITY_NOTIFY_SEVERITY", "warning")
 	t.Setenv("ACCOUNTABILITY_POLICY_FILE", "cmd/accountability-spoke/policies.example.json")

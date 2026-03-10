@@ -19,6 +19,9 @@ const (
 	snoozeDurationOptionName   = "duration"
 	snoozeDurationOptionType   = "string"
 	snoozeDurationOptionPrompt = "Examples: 15m, 1h"
+	discordActionSnooze10m     = "snooze_10m"
+	discordActionSnooze30m     = "snooze_30m"
+	discordActionAcknowledge   = "acknowledge"
 )
 
 func main() {
@@ -71,6 +74,7 @@ func run(logger *log.Logger) error {
 	mux.HandleFunc("/control/started", app.handleStarted)
 	mux.HandleFunc("/control/snooze", app.handleSnooze)
 	mux.HandleFunc("/control/resume", app.handleResume)
+	mux.HandleFunc("/discord/callback", app.handleDiscordCallback)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

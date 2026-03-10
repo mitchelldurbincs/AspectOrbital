@@ -8,6 +8,11 @@ import (
 	"personal-infrastructure/pkg/hubnotify"
 )
 
+const (
+	beeminderNotifyService = "beeminder-spoke"
+	beeminderNotifyEvent   = "goal-reminder"
+)
+
 func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	ctx, cancel := context.WithTimeout(parentCtx, cycleTimeout)
 	defer cancel()
@@ -81,9 +86,29 @@ func (a *spokeApp) runGoalCycle(ctx context.Context, goalSlug string, nowUTC, no
 
 	message := renderReminderMessage(snapshot)
 	if err := a.hub.Notify(ctx, hubnotify.NotifyRequest{
+		Version:       hubnotify.Version2,
 		TargetChannel: a.cfg.NotifyTargetChannel,
-		Message:       message,
+		Service:       beeminderNotifyService,
+		Event:         beeminderNotifyEvent,
 		Severity:      a.cfg.NotifySeverity,
+		Title:         hubnotify.CanonicalTitle(beeminderNotifyService, beeminderNotifyEvent),
+		Summary:       message,
+		URL:           snapshot.ActionURL,
+		Fields: []hubnotify.NotifyField{
+			{Key: "Goal", Value: snapshot.GoalSlug, Group: hubnotify.FieldGroupContext, Order: 10, Inline: true},
+			{Key: "Progress", Value: fmt.Sprintf("%.3f / %.3f %s", snapshot.TodayProgress, snapshot.RequiredProgress, snapshot.GoalUnits), Group: hubnotify.FieldGroupMetrics, Order: 20, Inline: true},
+			{Key: "Checked At", Value: snapshot.CheckedAt.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 30, Inline: false},
+		},
+		CallbackURL: a.cfg.DiscordCallbackURL,
+		Actions: []hubnotify.NotifyAction{
+			{ID: discordActionSnooze10m, Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary},
+			{ID: discordActionSnooze30m, Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
+			{ID: discordActionAcknowledge, Label: "Acknowledge", Style: hubnotify.ActionStyleSuccess},
+		},
+		AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+		Visibility:            hubnotify.VisibilityPublic,
+		SuppressNotifications: false,
+		OccurredAt:            snapshot.CheckedAt.UTC(),
 	}); err != nil {
 		return fmt.Errorf("goal %q: %w", goalSlug, err)
 	}

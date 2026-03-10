@@ -98,7 +98,25 @@ func TestRunGoalCycleSendsReminderWhenBehind(t *testing.T) {
 	if notifyRequests[0].TargetChannel != cfg.NotifyTargetChannel {
 		t.Fatalf("target channel = %q, want %q", notifyRequests[0].TargetChannel, cfg.NotifyTargetChannel)
 	}
-	if !strings.Contains(notifyRequests[0].Message, "study reminder") {
-		t.Fatalf("unexpected reminder message: %q", notifyRequests[0].Message)
+	if notifyRequests[0].Version != hubnotify.Version2 {
+		t.Fatalf("version = %d, want %d", notifyRequests[0].Version, hubnotify.Version2)
+	}
+	if notifyRequests[0].Title != hubnotify.CanonicalTitle("beeminder-spoke", "goal-reminder") {
+		t.Fatalf("unexpected title: %q", notifyRequests[0].Title)
+	}
+	if notifyRequests[0].CallbackURL != cfg.DiscordCallbackURL {
+		t.Fatalf("callback url = %q, want %q", notifyRequests[0].CallbackURL, cfg.DiscordCallbackURL)
+	}
+	if !strings.Contains(notifyRequests[0].Summary, "study reminder") {
+		t.Fatalf("unexpected reminder summary: %q", notifyRequests[0].Summary)
+	}
+	if len(notifyRequests[0].Actions) != 3 {
+		t.Fatalf("action count = %d, want 3", len(notifyRequests[0].Actions))
+	}
+	if notifyRequests[0].Actions[0].ID != discordActionSnooze10m || notifyRequests[0].Actions[1].ID != discordActionSnooze30m || notifyRequests[0].Actions[2].ID != discordActionAcknowledge {
+		t.Fatalf("unexpected actions: %#v", notifyRequests[0].Actions)
+	}
+	if len(notifyRequests[0].Fields) == 0 {
+		t.Fatalf("expected rich notify fields, got %#v", notifyRequests[0])
 	}
 }

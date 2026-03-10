@@ -26,6 +26,8 @@ type config struct {
 
 	HubNotifyURL        string `envconfig:"HUB_NOTIFY_URL" required:"true"`
 	HubNotifyAuthToken  string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	DiscordCallbackURL  string `envconfig:"BEEMINDER_DISCORD_CALLBACK_URL" required:"true"`
+	CallbackAuthToken   string `envconfig:"BEEMINDER_CALLBACK_AUTH_TOKEN" required:"true"`
 	NotifyTargetChannel string `envconfig:"BEEMINDER_NOTIFY_CHANNEL" required:"true"`
 	NotifySeverity      string `envconfig:"BEEMINDER_NOTIFY_SEVERITY" required:"true"`
 
@@ -176,6 +178,9 @@ func validateConfig(cfg config) error {
 	}
 	if strings.TrimSpace(cfg.BeeminderUsername) == "" {
 		missing = append(missing, "BEEMINDER_USERNAME")
+	}
+	if strings.TrimSpace(cfg.CallbackAuthToken) == "" {
+		missing = append(missing, "BEEMINDER_CALLBACK_AUTH_TOKEN")
 	}
 	if len(cfg.BeeminderGoalSlugs) == 0 {
 		missing = append(missing, "BEEMINDER_GOAL_SLUGS")

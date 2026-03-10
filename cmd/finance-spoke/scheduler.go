@@ -9,7 +9,11 @@ import (
 	"personal-infrastructure/pkg/hubnotify"
 )
 
-const failedRunRetryInterval = 6 * time.Hour
+const (
+	failedRunRetryInterval = 6 * time.Hour
+	financeNotifyService   = "finance-spoke"
+	financeNotifyEvent     = "weekly-summary"
+)
 
 type scheduler struct {
 	cfg      config
@@ -106,9 +110,24 @@ func (s *scheduler) sendSummary(ctx context.Context, now time.Time, scheduledAt 
 
 	message := renderWeeklySummaryMessage(s.cfg.SummaryTitle, summary, s.location, s.cfg.SummaryMaxItems)
 	err = s.hub.Notify(ctx, hubnotify.NotifyRequest{
+		Version:       hubnotify.Version2,
 		TargetChannel: s.cfg.NotifyTargetChannel,
-		Message:       message,
+		Service:       financeNotifyService,
+		Event:         financeNotifyEvent,
 		Severity:      s.cfg.NotifySeverity,
+		Title:         hubnotify.CanonicalTitle(financeNotifyService, financeNotifyEvent),
+		Summary:       message,
+		Fields: []hubnotify.NotifyField{
+			{Key: "Week", Value: summary.WeekKey, Group: hubnotify.FieldGroupContext, Order: 10, Inline: true},
+			{Key: "Charge Count", Value: fmt.Sprintf("%d", len(summary.Charges)), Group: hubnotify.FieldGroupMetrics, Order: 20, Inline: true},
+			{Key: "Total", Value: fmt.Sprintf("$%.2f", summary.TotalAmount), Group: hubnotify.FieldGroupMetrics, Order: 30, Inline: true},
+			{Key: "Window End", Value: summary.WindowEnd.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 40, Inline: false},
+		},
+		Actions:               []hubnotify.NotifyAction{},
+		AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+		Visibility:            hubnotify.VisibilityPublic,
+		SuppressNotifications: false,
+		OccurredAt:            now.UTC(),
 	})
 	if err != nil {
 		return err

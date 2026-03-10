@@ -14,6 +14,8 @@ func testConfig() config {
 		BeeminderAuthToken:  "token",
 		BeeminderUsername:   "alice",
 		BeeminderGoalSlugs:  []string{"study"},
+		DiscordCallbackURL:  "http://127.0.0.1:8090/discord/callback",
+		CallbackAuthToken:   "test-callback-token",
 		NotifyTargetChannel: "beeminder",
 		NotifySeverity:      "info",
 		ReminderInterval:    30 * time.Minute,

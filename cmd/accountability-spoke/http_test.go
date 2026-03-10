@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/accountability"
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 func TestParseDeadlineClockTimeRollsToNextDay(t *testing.T) {
@@ -180,6 +183,11 @@ func newTestSpokeApp(t *testing.T) *testSpokeApp {
 	return &testSpokeApp{
 		spokeApp: &spokeApp{
 			cfg: config{
+				DiscordCallbackURL: "http://127.0.0.1:8093/discord/callback",
+				CallbackAuthToken:  "test-callback-token",
+				NotifyChannel:      "accountability",
+				NotifySeverity:     "warning",
+				ReminderInterval:   5 * time.Minute,
 				CommitCommandName:  "commit",
 				ProofCommandName:   "proof",
 				CheckInCommandName: "checkin",
@@ -223,5 +231,98 @@ func TestHandleCommandStatusWithoutCommitmentReturnsOK(t *testing.T) {
 	}
 	if payload["message"] != "No active commitment." {
 		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestHandleDiscordCallbackSnooze30m(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.Commit(context.Background(), "u1", "ship feature", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"accountability-spoke","event":"commitment-reminder","action":{"id":"snooze_30m","label":"Snooze 30m","style":"secondary"},"context":{"discordUserId":"u1"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-callback-token")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Reminders snoozed until") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleDiscordCallbackDismissUsesDefaultSnooze(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.Commit(context.Background(), "u1", "ship feature", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"accountability-spoke","event":"commitment-reminder","action":{"id":"dismiss","label":"Dismiss","style":"secondary"},"context":{"discordUserId":"u1"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-callback-token")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Dismissed this reminder until") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleDiscordCallbackRejectsUnauthorizedRequest(t *testing.T) {
+	app := newTestSpokeApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"accountability-spoke","event":"commitment-reminder","action":{"id":"dismiss","label":"Dismiss","style":"secondary"},"context":{"discordUserId":"u1"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestRunReminderSweepIncludesCallbackActions(t *testing.T) {
+	app := newTestSpokeApp(t)
+	commitment, err := app.service.Commit(context.Background(), "u1", "ship feature", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.serviceDB.Exec(`UPDATE commitments SET deadline=? WHERE id=?`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339), commitment.ID); err != nil {
+		t.Fatalf("update overdue deadline: %v", err)
+	}
+
+	var notifyPayload hubnotify.NotifyRequest
+	hubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&notifyPayload); err != nil {
+			t.Fatalf("decode notify payload: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hubServer.Close()
+
+	hub := hubnotify.NewClient(hubServer.URL, "hub-token", hubServer.Client())
+	if err := runReminderSweep(context.Background(), log.New(io.Discard, "", 0), app.cfg, app.service, hub); err != nil {
+		t.Fatalf("runReminderSweep returned error: %v", err)
+	}
+
+	if notifyPayload.CallbackURL != app.cfg.DiscordCallbackURL {
+		t.Fatalf("callback url = %q, want %q", notifyPayload.CallbackURL, app.cfg.DiscordCallbackURL)
+	}
+	if len(notifyPayload.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(notifyPayload.Actions))
+	}
+	if notifyPayload.Actions[0].ID != accountabilityActionSnooze30m || notifyPayload.Actions[1].ID != accountabilityActionDismiss {
+		t.Fatalf("unexpected actions: %#v", notifyPayload.Actions)
 	}
 }

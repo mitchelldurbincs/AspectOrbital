@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	spokebridge "personal-infrastructure/cmd/discord-hub/spoke_bridge"
+	"personal-infrastructure/pkg/hubnotify"
 	"personal-infrastructure/pkg/spokecontract"
 )
 
@@ -25,6 +27,55 @@ func commandInteraction(name string, options []*discordgo.ApplicationCommandInte
 				Name:    name,
 				Options: options,
 			},
+		},
+	}
+}
+
+type fakeActionCallbackDispatcher struct {
+	callbackURL string
+	payload     hubnotify.ActionCallbackRequest
+	response    hubnotify.ActionCallbackResponse
+	err         error
+}
+
+func (f *fakeActionCallbackDispatcher) Dispatch(_ context.Context, callbackURL string, payload hubnotify.ActionCallbackRequest) (hubnotify.ActionCallbackResponse, error) {
+	f.callbackURL = callbackURL
+	f.payload = payload
+	if f.err != nil {
+		return hubnotify.ActionCallbackResponse{}, f.err
+	}
+	return f.response, nil
+}
+
+func TestActionCallbackDispatcherSetsBearerToken(t *testing.T) {
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","message":"done"}`))
+	}))
+	defer server.Close()
+
+	dispatcher := newActionCallbackDispatcher(server.Client(), "test-callback-token")
+	_, err := dispatcher.Dispatch(context.Background(), server.URL, hubnotify.ActionCallbackRequest{Version: hubnotify.Version2})
+	if err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+	if authHeader != "Bearer test-callback-token" {
+		t.Fatalf("unexpected authorization header: %q", authHeader)
+	}
+}
+
+func componentInteraction(customID string, message *discordgo.Message) *discordgo.InteractionCreate {
+	return &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			ID:        "ix-1",
+			Type:      discordgo.InteractionMessageComponent,
+			GuildID:   "g-456",
+			ChannelID: "c-789",
+			Member:    &discordgo.Member{User: &discordgo.User{ID: "u-123"}},
+			Message:   message,
+			Data:      discordgo.MessageComponentInteractionData{CustomID: customID},
 		},
 	}
 }
@@ -87,7 +138,7 @@ func TestInteractionHandlerRespondsToPing(t *testing.T) {
 		respondEphemeralFunc = prev
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil)
 	handler(nil, commandInteraction(pingCommandName, nil))
 
 	if len(messages) != 1 || messages[0] != "pong" {
@@ -132,7 +183,7 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
 	interaction := commandInteraction("status", []*discordgo.ApplicationCommandInteractionDataOption{{Name: "duration", Value: " 30m "}})
 	interaction.Interaction.Member = &discordgo.Member{User: &discordgo.User{ID: "u-123"}}
 	interaction.Interaction.GuildID = "g-456"
@@ -165,7 +216,7 @@ func TestInteractionHandlerRespondsWhenCommandUnavailable(t *testing.T) {
 		respondEphemeralFunc = prev
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), nil)
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -203,7 +254,7 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -229,7 +280,7 @@ func TestInteractionHandlerRespondsWhenCommandsAreSyncing(t *testing.T) {
 	runtime := newBridgeRuntime()
 	runtime.markSyncStarted()
 
-	handler := interactionHandler(log.New(io.Discard, "", 0), runtime)
+	handler := interactionHandler(log.New(io.Discard, "", 0), runtime, nil)
 	handler(nil, commandInteraction("status", nil))
 
 	if len(messages) != 1 {
@@ -237,5 +288,68 @@ func TestInteractionHandlerRespondsWhenCommandsAreSyncing(t *testing.T) {
 	}
 	if messages[0] != spokeCommandsSyncingMessage {
 		t.Fatalf("unexpected syncing message: %q", messages[0])
+	}
+}
+
+func TestInteractionHandlerRoutesButtonCallbacks(t *testing.T) {
+	dispatcher := &fakeActionCallbackDispatcher{response: hubnotify.ActionCallbackResponse{Status: "ok", Message: "Snoozed for 10 minutes."}}
+	var messages []string
+
+	prevDefer := deferEphemeralFunc
+	deferEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction) error { return nil }
+	prevFollowup := followupEphemeralFunc
+	followupEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+		messages = append(messages, message)
+		return nil
+	}
+	t.Cleanup(func() {
+		deferEphemeralFunc = prevDefer
+		followupEphemeralFunc = prevFollowup
+	})
+
+	customID := encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m")
+	message := &discordgo.Message{
+		ID: "m-1",
+		Embeds: []*discordgo.MessageEmbed{{
+			Title: "[BEEMINDER-SPOKE] GOAL REMINDER",
+			URL:   "https://example.com/goal",
+			Color: notifySeverityColors[hubnotify.SeverityWarning],
+		}},
+		Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{Label: "Snooze 10m", Style: discordgo.SecondaryButton, CustomID: customID},
+		}}},
+	}
+
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, dispatcher)
+	handler(nil, componentInteraction(customID, message))
+
+	if dispatcher.callbackURL != "http://127.0.0.1:8092/callback" {
+		t.Fatalf("unexpected callback URL: %q", dispatcher.callbackURL)
+	}
+	if dispatcher.payload.Action.ID != "snooze_10m" || dispatcher.payload.Action.Label != "Snooze 10m" {
+		t.Fatalf("unexpected action payload: %#v", dispatcher.payload.Action)
+	}
+	if dispatcher.payload.Context.DiscordUserID != "u-123" || dispatcher.payload.Context.MessageID != "m-1" {
+		t.Fatalf("unexpected callback context: %#v", dispatcher.payload.Context)
+	}
+	if len(messages) != 1 || messages[0] != "Snoozed for 10 minutes." {
+		t.Fatalf("unexpected followup messages: %#v", messages)
+	}
+}
+
+func TestInteractionHandlerRejectsInvalidButtonCustomID(t *testing.T) {
+	var messages []string
+	prevRespond := respondEphemeralFunc
+	respondEphemeralFunc = func(_ *discordgo.Session, _ *discordgo.Interaction, message string) error {
+		messages = append(messages, message)
+		return nil
+	}
+	t.Cleanup(func() { respondEphemeralFunc = prevRespond })
+
+	handler := interactionHandler(log.New(io.Discard, "", 0), nil, &fakeActionCallbackDispatcher{})
+	handler(nil, componentInteraction("bad-custom-id", &discordgo.Message{}))
+
+	if len(messages) != 1 || messages[0] != "That action is invalid." {
+		t.Fatalf("unexpected messages: %#v", messages)
 	}
 }

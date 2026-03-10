@@ -21,7 +21,10 @@ import (
 )
 
 const (
-	commandCatalogService = "accountability-spoke"
+	commandCatalogService         = "accountability-spoke"
+	accountabilityNotifyEvent     = "commitment-reminder"
+	accountabilityActionSnooze30m = "snooze_30m"
+	accountabilityActionDismiss   = "dismiss"
 )
 
 func main() {
@@ -77,6 +80,7 @@ func run(logger *log.Logger) error {
 	mux.HandleFunc("/healthz", app.handleHealthz)
 	mux.HandleFunc("/control/commands", app.handleCommands)
 	mux.HandleFunc("/control/command", app.handleCommand)
+	mux.HandleFunc("/discord/callback", app.handleDiscordCallback)
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
@@ -135,7 +139,6 @@ func startReminderLoop(ctx context.Context, logger *log.Logger, cfg config, serv
 
 func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, service *accountability.Service, hub *hubnotify.Client) error {
 	const notifyService = "accountability-spoke"
-	const notifyEvent = "commitment-reminder"
 
 	commitments, err := service.OverdueNeedingReminder(ctx, cfg.ReminderInterval)
 	if err != nil {
@@ -146,17 +149,21 @@ func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, servi
 		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{
 			Version:       hubnotify.Version2,
 			TargetChannel: cfg.NotifyChannel,
+			CallbackURL:   cfg.DiscordCallbackURL,
 			Service:       notifyService,
-			Event:         notifyEvent,
+			Event:         accountabilityNotifyEvent,
 			Severity:      cfg.NotifySeverity,
-			Title:         hubnotify.CanonicalTitle(notifyService, notifyEvent),
+			Title:         hubnotify.CanonicalTitle(notifyService, accountabilityNotifyEvent),
 			Summary:       message,
 			Fields: []hubnotify.NotifyField{
 				{Key: "Task", Value: commitment.Task, Group: hubnotify.FieldGroupContext, Order: 10, Inline: false},
 				{Key: "User", Value: commitment.UserID, Group: hubnotify.FieldGroupContext, Order: 20, Inline: true},
 				{Key: "Deadline", Value: commitment.Deadline.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 30, Inline: true},
 			},
-			Actions:               []hubnotify.NotifyAction{},
+			Actions: []hubnotify.NotifyAction{
+				{ID: accountabilityActionSnooze30m, Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
+				{ID: accountabilityActionDismiss, Label: "Dismiss", Style: hubnotify.ActionStyleSecondary},
+			},
 			AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{commitment.UserID}, Roles: []string{}, RepliedUser: false},
 			Visibility:            hubnotify.VisibilityPublic,
 			SuppressNotifications: false,

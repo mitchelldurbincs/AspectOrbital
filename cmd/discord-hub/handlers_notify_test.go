@@ -6,25 +6,29 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"personal-infrastructure/pkg/hubnotify"
 )
 
 type fakeMessageSender struct {
 	calls      int
 	channelID  string
-	message    string
+	message    *discordgo.MessageSend
 	sendErr    error
 	lastOption int
 	waitForCtx bool
 }
 
-func (f *fakeMessageSender) ChannelMessageSend(channelID string, content string, options ...discordgo.RequestOption) (*discordgo.Message, error) {
+func (f *fakeMessageSender) ChannelMessageSendComplex(channelID string, message *discordgo.MessageSend, options ...discordgo.RequestOption) (*discordgo.Message, error) {
 	f.calls++
 	f.channelID = channelID
-	f.message = content
+	f.message = message
 	f.lastOption = len(options)
 	if f.waitForCtx {
 		cfg := &discordgo.RequestConfig{Request: httptest.NewRequest(http.MethodPost, "https://discord.invalid/api", nil)}
@@ -58,9 +62,19 @@ func authorizeNotifyRequest(req *http.Request) {
 
 func TestValidateNotifyPayloadTrimsAndNormalizesSeverity(t *testing.T) {
 	payload := &notifyPayload{
-		TargetChannel: " alerts ",
-		Message:       " hello world ",
-		Severity:      " CRITICAL ",
+		Version:               hubnotify.Version2,
+		TargetChannel:         " alerts ",
+		Service:               " beeminder-spoke ",
+		Event:                 " trigger-fired ",
+		Severity:              " CRITICAL ",
+		Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+		Summary:               " hello world ",
+		Fields:                []hubnotify.NotifyField{{Key: " Goal ", Value: " Study ", Group: " Context ", Order: 10, Inline: false}},
+		Actions:               []hubnotify.NotifyAction{},
+		AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{" USERS "}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+		Visibility:            " PUBLIC ",
+		SuppressNotifications: true,
+		OccurredAt:            time.Date(2026, time.March, 10, 14, 22, 0, 0, time.UTC),
 	}
 
 	if err := validateNotifyPayload(payload); err != nil {
@@ -70,11 +84,23 @@ func TestValidateNotifyPayloadTrimsAndNormalizesSeverity(t *testing.T) {
 	if payload.TargetChannel != "alerts" {
 		t.Fatalf("unexpected target channel: %q", payload.TargetChannel)
 	}
-	if payload.Message != "hello world" {
-		t.Fatalf("unexpected message: %q", payload.Message)
+	if payload.Service != "beeminder-spoke" || payload.Event != "trigger-fired" {
+		t.Fatalf("unexpected service/event: %#v", payload)
 	}
 	if payload.Severity != "critical" {
 		t.Fatalf("unexpected severity: %q", payload.Severity)
+	}
+	if payload.Summary != "hello world" {
+		t.Fatalf("unexpected summary: %q", payload.Summary)
+	}
+	if payload.Visibility != hubnotify.VisibilityPublic {
+		t.Fatalf("unexpected visibility: %q", payload.Visibility)
+	}
+	if payload.Fields[0].Key != "Goal" || payload.Fields[0].Value != "Study" || payload.Fields[0].Group != hubnotify.FieldGroupContext {
+		t.Fatalf("unexpected field normalization: %#v", payload.Fields[0])
+	}
+	if !reflect.DeepEqual(payload.AllowedMentions.Parse, []string{"users"}) {
+		t.Fatalf("unexpected allowed mentions parse: %#v", payload.AllowedMentions.Parse)
 	}
 }
 
@@ -85,29 +111,144 @@ func TestValidateNotifyPayloadRejectsInvalidValues(t *testing.T) {
 		wantErr string
 	}{
 		{
+			name: "missing version",
+			payload: notifyPayload{
+				TargetChannel:         "alerts",
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "info",
+				Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:               "ok",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "version must be 2",
+		},
+		{
 			name: "missing target channel",
 			payload: notifyPayload{
-				Message:  "ok",
-				Severity: "info",
+				Version:               hubnotify.Version2,
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "info",
+				Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:               "ok",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
 			},
 			wantErr: "targetChannel is required",
 		},
 		{
-			name: "missing message",
+			name: "missing summary",
 			payload: notifyPayload{
-				TargetChannel: "alerts",
-				Severity:      "warning",
+				Version:               hubnotify.Version2,
+				TargetChannel:         "alerts",
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "warning",
+				Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
 			},
-			wantErr: "message is required",
+			wantErr: "summary is required",
 		},
 		{
 			name: "invalid severity",
 			payload: notifyPayload{
-				TargetChannel: "alerts",
-				Message:       "ok",
-				Severity:      "fatal",
+				Version:               hubnotify.Version2,
+				TargetChannel:         "alerts",
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "fatal",
+				Title:                 "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:               "ok",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
 			},
 			wantErr: "severity must be one of: info, warning, critical",
+		},
+		{
+			name: "title must match canonical format",
+			payload: notifyPayload{
+				Version:               hubnotify.Version2,
+				TargetChannel:         "alerts",
+				Service:               "beeminder-spoke",
+				Event:                 "trigger-fired",
+				Severity:              "warning",
+				Title:                 "[BEEMINDER] TRIGGER FIRED",
+				Summary:               "ok",
+				Fields:                []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:               []hubnotify.NotifyAction{},
+				AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "title must match the canonical [SERVICE] EVENT format for service/event",
+		},
+		{
+			name: "conflicting allowed mentions users parse",
+			payload: notifyPayload{
+				Version:       hubnotify.Version2,
+				TargetChannel: "alerts",
+				Service:       "beeminder-spoke",
+				Event:         "trigger-fired",
+				Severity:      "warning",
+				Title:         "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:       "ok",
+				Fields:        []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:       []hubnotify.NotifyAction{},
+				AllowedMentions: hubnotify.AllowedMentions{
+					Parse:       []string{"users"},
+					Users:       []string{"12345678901234567"},
+					Roles:       []string{},
+					RepliedUser: false,
+				},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "allowedMentions.users cannot be used when parse includes users",
+		},
+		{
+			name: "non-link action requires callback url",
+			payload: notifyPayload{
+				Version:       hubnotify.Version2,
+				TargetChannel: "alerts",
+				Service:       "beeminder-spoke",
+				Event:         "trigger-fired",
+				Severity:      "warning",
+				Title:         "[BEEMINDER-SPOKE] TRIGGER FIRED",
+				Summary:       "ok",
+				Fields:        []hubnotify.NotifyField{{Key: "Goal", Value: "Study", Group: "Context", Order: 10, Inline: false}},
+				Actions:       []hubnotify.NotifyAction{{ID: "snooze_10m", Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary}},
+				AllowedMentions: hubnotify.AllowedMentions{
+					Parse:       []string{},
+					Users:       []string{},
+					Roles:       []string{},
+					RepliedUser: false,
+				},
+				Visibility:            "public",
+				SuppressNotifications: false,
+				OccurredAt:            time.Now().UTC(),
+			},
+			wantErr: "callbackUrl is required when actions include non-link buttons",
 		},
 	}
 
@@ -129,7 +270,7 @@ func TestNotifySendsDiscordMessageAndReturns202(t *testing.T) {
 	sender := &fakeMessageSender{}
 	h := testHubHandler(sender)
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"Disk is full","severity":"critical"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"alerts","service":"beeminder-spoke","event":"trigger-fired","severity":"critical","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"Disk is full","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":true,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
@@ -147,11 +288,97 @@ func TestNotifySendsDiscordMessageAndReturns202(t *testing.T) {
 	if sender.channelID != "123" {
 		t.Fatalf("unexpected channel ID: %q", sender.channelID)
 	}
-	if sender.message != "<@999> Disk is full" {
-		t.Fatalf("unexpected message payload: %q", sender.message)
+	if sender.message == nil || len(sender.message.Embeds) != 1 {
+		t.Fatalf("expected one embed payload, got %#v", sender.message)
+	}
+	if sender.message.Embeds[0].Title != "[BEEMINDER-SPOKE] TRIGGER FIRED" {
+		t.Fatalf("unexpected embed title: %#v", sender.message.Embeds[0])
+	}
+	if sender.message.Embeds[0].Color != 0xCF222E {
+		t.Fatalf("unexpected embed color: %d", sender.message.Embeds[0].Color)
+	}
+	if sender.message.AllowedMentions == nil || len(sender.message.AllowedMentions.Parse) != 0 {
+		t.Fatalf("unexpected allowed mentions: %#v", sender.message.AllowedMentions)
+	}
+	if sender.message.Flags != discordgo.MessageFlagsSuppressNotifications {
+		t.Fatalf("unexpected message flags: %v", sender.message.Flags)
 	}
 	if sender.lastOption == 0 {
 		t.Fatal("expected notify send to include request options")
+	}
+}
+
+func TestBuildNotifyMessageIncludesExplicitAllowedMentions(t *testing.T) {
+	payload := notifyPayload{
+		Version:       hubnotify.Version2,
+		TargetChannel: "alerts",
+		Service:       "accountability-spoke",
+		Event:         "commitment-reminder",
+		Severity:      hubnotify.SeverityWarning,
+		Title:         hubnotify.CanonicalTitle("accountability-spoke", "commitment-reminder"),
+		Summary:       "Reminder for <@12345678901234567>",
+		Fields:        []hubnotify.NotifyField{{Key: "Task", Value: "Write tests", Group: hubnotify.FieldGroupContext, Order: 10, Inline: false}},
+		Actions:       []hubnotify.NotifyAction{},
+		AllowedMentions: hubnotify.AllowedMentions{
+			Parse:       []string{},
+			Users:       []string{"12345678901234567"},
+			Roles:       []string{},
+			RepliedUser: false,
+		},
+		Visibility:            hubnotify.VisibilityPublic,
+		SuppressNotifications: false,
+		OccurredAt:            time.Date(2026, time.March, 10, 15, 0, 0, 0, time.UTC),
+	}
+
+	message, err := buildNotifyMessage(payload)
+	if err != nil {
+		t.Fatalf("buildNotifyMessage returned error: %v", err)
+	}
+	if message.AllowedMentions == nil {
+		t.Fatal("expected allowed mentions on built message")
+	}
+	if !reflect.DeepEqual(message.AllowedMentions.Users, []string{"12345678901234567"}) {
+		t.Fatalf("unexpected users allowlist: %#v", message.AllowedMentions.Users)
+	}
+	if message.Embeds[0].Color != 0xD29922 {
+		t.Fatalf("unexpected warning color: %d", message.Embeds[0].Color)
+	}
+}
+
+func TestBuildNotifyMessageIncludesButtons(t *testing.T) {
+	payload := notifyPayload{
+		Version:         hubnotify.Version2,
+		TargetChannel:   "alerts",
+		CallbackURL:     "http://127.0.0.1:8092/callback",
+		Service:         "beeminder-spoke",
+		Event:           "goal-reminder",
+		Severity:        hubnotify.SeverityWarning,
+		Title:           hubnotify.CanonicalTitle("beeminder-spoke", "goal-reminder"),
+		Summary:         "Time to make progress.",
+		Fields:          []hubnotify.NotifyField{{Key: "Goal", Value: "study", Group: hubnotify.FieldGroupContext, Order: 10, Inline: false}},
+		Actions:         []hubnotify.NotifyAction{{ID: "snooze_10m", Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary}},
+		AllowedMentions: hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
+		Visibility:      hubnotify.VisibilityPublic,
+		OccurredAt:      time.Date(2026, time.March, 10, 15, 0, 0, 0, time.UTC),
+	}
+
+	message, err := buildNotifyMessage(payload)
+	if err != nil {
+		t.Fatalf("buildNotifyMessage returned error: %v", err)
+	}
+	if len(message.Components) != 1 {
+		t.Fatalf("expected one action row, got %#v", message.Components)
+	}
+	row, ok := message.Components[0].(discordgo.ActionsRow)
+	if !ok || len(row.Components) != 1 {
+		t.Fatalf("unexpected action row: %#v", message.Components[0])
+	}
+	button, ok := row.Components[0].(discordgo.Button)
+	if !ok {
+		t.Fatalf("unexpected component type: %#v", row.Components[0])
+	}
+	if button.CustomID != encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m") {
+		t.Fatalf("unexpected custom ID: %q", button.CustomID)
 	}
 }
 
@@ -159,7 +386,7 @@ func TestNotifyUnknownChannelReturns400(t *testing.T) {
 	sender := &fakeMessageSender{}
 	h := testHubHandler(sender)
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"missing","message":"hello","severity":"info"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"missing","service":"beeminder-spoke","event":"trigger-fired","severity":"info","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"hello","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
@@ -177,7 +404,7 @@ func TestNotifyDiscordFailureReturns502(t *testing.T) {
 	sender := &fakeMessageSender{sendErr: io.ErrUnexpectedEOF}
 	h := testHubHandler(sender)
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"alerts","service":"beeminder-spoke","event":"trigger-fired","severity":"warning","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"hello","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	authorizeNotifyRequest(req)
 	rec := httptest.NewRecorder()
 
@@ -192,7 +419,7 @@ func TestNotifyDiscordTimeoutReturns504(t *testing.T) {
 	sender := &fakeMessageSender{waitForCtx: true}
 	h := testHubHandler(sender)
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"alerts","service":"beeminder-spoke","event":"trigger-fired","severity":"warning","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"hello","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(ctx)
@@ -222,7 +449,7 @@ func TestNotifyRejectsNonPostRequests(t *testing.T) {
 func TestNotifyMissingBearerTokenReturns401(t *testing.T) {
 	h := testHubHandler(&fakeMessageSender{})
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"alerts","service":"beeminder-spoke","event":"trigger-fired","severity":"warning","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"hello","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	rec := httptest.NewRecorder()
 
 	h.notify(rec, req)
@@ -235,7 +462,7 @@ func TestNotifyMissingBearerTokenReturns401(t *testing.T) {
 func TestNotifyInvalidBearerTokenReturns401(t *testing.T) {
 	h := testHubHandler(&fakeMessageSender{})
 
-	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"targetChannel":"alerts","message":"hello","severity":"warning"}`))
+	req := httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"version":2,"targetChannel":"alerts","service":"beeminder-spoke","event":"trigger-fired","severity":"warning","title":"[BEEMINDER-SPOKE] TRIGGER FIRED","summary":"hello","fields":[{"key":"Goal","value":"Study","group":"Context","order":10,"inline":false}],"actions":[],"allowedMentions":{"parse":[],"users":[],"roles":[],"repliedUser":false},"visibility":"public","suppressNotifications":false,"occurredAt":"2026-03-10T14:22:00Z"}`))
 	req.Header.Set("Authorization", "Bearer wrong-token")
 	rec := httptest.NewRecorder()
 

@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aspectorbital.local/contracts/spoke-contract-v2.schema.json",
+  "title": "AspectOrbital Spoke Contract V2",
+  "type": "object",
+  "$defs": {
+    "slashName": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    },
+    "optionType": {
+      "type": "string",
+      "enum": ["string", "integer", "number", "boolean", "attachment"]
+    },
+    "commandOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "description", "required"],
+      "properties": {
+        "name": { "$ref": "#/$defs/slashName" },
+        "type": { "$ref": "#/$defs/optionType" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "required": { "type": "boolean" }
+      }
+    },
+    "commandSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "$ref": "#/$defs/slashName" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/commandOption" }
+        }
+      }
+    },
+    "commandCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "service", "commands"],
+      "properties": {
+        "version": { "type": "integer", "const": 1 },
+        "service": { "type": "string", "minLength": 1 },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/commandSpec" }
+        },
+        "commandNames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slashName" }
+        }
+      }
+    },
+    "commandContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["discordUserId"],
+      "properties": {
+        "discordUserId": { "type": "string", "minLength": 1 },
+        "guildId": { "type": "string" },
+        "channelId": { "type": "string" }
+      }
+    },
+    "commandExecuteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "context"],
+      "properties": {
+        "command": { "$ref": "#/$defs/slashName" },
+        "context": { "$ref": "#/$defs/commandContext" },
+        "options": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/slashName" },
+          "additionalProperties": true
+        }
+      }
+    },
+    "commandExecuteResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "command", "message"],
+      "properties": {
+        "status": { "type": "string", "minLength": 1 },
+        "command": { "$ref": "#/$defs/slashName" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1900 },
+        "data": {}
+      }
+    },
+    "notifySeverity": {
+      "type": "string",
+      "enum": ["info", "warning", "critical"]
+    },
+    "notifyVisibility": {
+      "type": "string",
+      "enum": ["public", "ephemeral"]
+    },
+    "titleFormat": {
+      "type": "string",
+      "pattern": "^\\[[A-Z0-9_-]{1,32}\\] [A-Z0-9 _-]{1,80}$"
+    },
+    "fieldGroup": {
+      "type": "string",
+      "enum": ["Context", "Metrics", "Timing", "Links"]
+    },
+    "snowflake": {
+      "type": "string",
+      "pattern": "^[0-9]{17,20}$"
+    },
+    "notifyField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value", "group", "order", "inline"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "value": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "group": { "$ref": "#/$defs/fieldGroup" },
+        "order": { "type": "integer", "minimum": 1, "maximum": 9999 },
+        "inline": { "type": "boolean" }
+      }
+    },
+    "allowedMentions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parse", "users", "roles", "repliedUser"],
+      "properties": {
+        "parse": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["users", "roles", "everyone"]
+          },
+          "uniqueItems": true
+        },
+        "users": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/snowflake" },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "roles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/snowflake" },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "repliedUser": { "type": "boolean" }
+      }
+    },
+    "actionLabel": {
+      "type": "string",
+      "enum": [
+        "Snooze 10m",
+        "Snooze 30m",
+        "Snooze 1h",
+        "Dismiss",
+        "View Details",
+        "Open Dashboard",
+        "Acknowledge",
+        "Mark Done",
+        "Disable Rule"
+      ]
+    },
+    "buttonStyleNonLink": {
+      "type": "string",
+      "enum": ["primary", "secondary", "success", "danger"]
+    },
+    "notifyActionNonLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "style"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[a-z0-9:_-]+$"
+        },
+        "label": { "$ref": "#/$defs/actionLabel" },
+        "style": { "$ref": "#/$defs/buttonStyleNonLink" }
+      }
+    },
+    "notifyActionLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "style", "url"],
+      "properties": {
+        "label": { "$ref": "#/$defs/actionLabel" },
+        "style": { "type": "string", "const": "link" },
+        "url": { "type": "string", "format": "uri", "maxLength": 512 }
+      }
+    },
+    "notifyAction": {
+      "oneOf": [
+        { "$ref": "#/$defs/notifyActionNonLink" },
+        { "$ref": "#/$defs/notifyActionLink" }
+      ]
+    },
+    "notifyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "targetChannel",
+        "service",
+        "event",
+        "severity",
+        "title",
+        "summary",
+        "fields",
+        "actions",
+        "allowedMentions",
+        "visibility",
+        "suppressNotifications",
+        "occurredAt"
+      ],
+      "properties": {
+        "version": { "type": "integer", "const": 2 },
+        "targetChannel": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "callbackUrl": { "type": "string", "format": "uri", "maxLength": 72 },
+        "service": { "$ref": "#/$defs/slashName" },
+        "event": { "$ref": "#/$defs/slashName" },
+        "severity": { "$ref": "#/$defs/notifySeverity" },
+        "title": { "$ref": "#/$defs/titleFormat" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "url": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/notifyField" },
+          "minItems": 1,
+          "maxItems": 25
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/notifyAction" },
+          "minItems": 0,
+          "maxItems": 5
+        },
+        "allowedMentions": { "$ref": "#/$defs/allowedMentions" },
+        "visibility": { "$ref": "#/$defs/notifyVisibility" },
+        "suppressNotifications": { "type": "boolean" },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
