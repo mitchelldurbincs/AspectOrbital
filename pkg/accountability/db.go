@@ -11,6 +11,48 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type schemaColumn struct {
+	name string
+	def  string
+}
+
+var bootstrapStatements = []string{
+	`CREATE TABLE IF NOT EXISTS commitments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id TEXT NOT NULL,
+		task TEXT NOT NULL,
+		goal_slug TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		deadline TEXT NOT NULL,
+		snoozed_until TEXT NOT NULL DEFAULT '',
+		last_reminder_at TEXT NOT NULL DEFAULT '',
+		last_checkin_at TEXT NOT NULL DEFAULT '',
+		last_checkin_text TEXT NOT NULL DEFAULT '',
+		checkin_quiet_until TEXT NOT NULL DEFAULT '',
+		reminder_count INTEGER NOT NULL DEFAULT 0,
+		policy_preset TEXT NOT NULL DEFAULT '',
+		policy_engine TEXT NOT NULL DEFAULT '',
+		policy_config TEXT NOT NULL DEFAULT '{}',
+		status TEXT NOT NULL,
+		proof_metadata TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_commitments_user_status ON commitments(user_id, status);`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_commitments_active_one_per_user ON commitments(user_id) WHERE status = 'pending';`,
+}
+
+var bootstrapCommitmentColumns = []schemaColumn{
+	{name: "snoozed_until", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "last_reminder_at", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "policy_preset", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "policy_engine", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "policy_config", def: "TEXT NOT NULL DEFAULT '{}'"},
+	{name: "last_checkin_at", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "last_checkin_text", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "checkin_quiet_until", def: "TEXT NOT NULL DEFAULT ''"},
+	{name: "reminder_count", def: "INTEGER NOT NULL DEFAULT 0"},
+}
+
 func OpenDB(rawDSN string) (*sql.DB, error) {
 	dsn := normalizeSQLiteDSN(rawDSN)
 	if strings.TrimSpace(dsn) == "" {
@@ -38,42 +80,15 @@ func Bootstrap(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("db is required")
 	}
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS commitments (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,task TEXT NOT NULL,goal_slug TEXT NOT NULL,created_at TEXT NOT NULL,deadline TEXT NOT NULL,snoozed_until TEXT NOT NULL DEFAULT '',last_reminder_at TEXT NOT NULL DEFAULT '',last_checkin_at TEXT NOT NULL DEFAULT '',last_checkin_text TEXT NOT NULL DEFAULT '',checkin_quiet_until TEXT NOT NULL DEFAULT '',reminder_count INTEGER NOT NULL DEFAULT 0,policy_preset TEXT NOT NULL DEFAULT '',policy_engine TEXT NOT NULL DEFAULT '',policy_config TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL,proof_metadata TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL);`,
-		`CREATE INDEX IF NOT EXISTS idx_commitments_user_status ON commitments(user_id, status);`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_commitments_active_one_per_user ON commitments(user_id) WHERE status = 'pending';`,
-	}
-	for _, stmt := range stmts {
+	for _, stmt := range bootstrapStatements {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
-	if err := ensureCommitmentColumn(ctx, db, "snoozed_until", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "last_reminder_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "policy_preset", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "policy_engine", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "policy_config", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "last_checkin_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "last_checkin_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "checkin_quiet_until", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := ensureCommitmentColumn(ctx, db, "reminder_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
+	for _, column := range bootstrapCommitmentColumns {
+		if err := ensureCommitmentColumn(ctx, db, column.name, column.def); err != nil {
+			return err
+		}
 	}
 	return nil
 }
