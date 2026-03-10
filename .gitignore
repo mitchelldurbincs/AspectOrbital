@@ -7,3 +7,5 @@ dist/
 *.log
 var/
 target/
+*.exe
+*.db
