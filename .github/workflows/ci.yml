@@ -82,6 +82,7 @@ jobs:
 
           cat > .ci/compose.env <<'EOF'
           HUB_NOTIFY_AUTH_TOKEN=ci-token
+          SPOKE_COMMAND_AUTH_TOKEN=ci-command-token
           HUB_NOTIFY_URL=http://discord-hub:8080/notify
 
           BEEMINDER_SPOKE_HTTP_ADDR=0.0.0.0:8090

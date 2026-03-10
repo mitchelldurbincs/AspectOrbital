@@ -1,6 +1,10 @@
 package spokecontrol
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestValidateDiscordUserRequiresDiscordUserID(t *testing.T) {
 	req := Request{}
@@ -42,5 +46,22 @@ func TestUnknownCommandErrorSortsValidCommands(t *testing.T) {
 	err := UnknownCommandError("wat", []string{"zeta", "alpha"})
 	if want := `unknown command "wat"; valid commands: alpha, zeta`; err != want {
 		t.Fatalf("unexpected error: got %q want %q", err, want)
+	}
+}
+
+func TestIsAuthorizedRequiresMatchingBearerToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/control/command", nil)
+	if IsAuthorized(req, "test-token") {
+		t.Fatal("expected request without auth header to be rejected")
+	}
+
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	if IsAuthorized(req, "test-token") {
+		t.Fatal("expected mismatched token to be rejected")
+	}
+
+	req.Header.Set("Authorization", "Bearer test-token")
+	if !IsAuthorized(req, "test-token") {
+		t.Fatal("expected matching bearer token to be accepted")
 	}
 }

@@ -1,11 +1,16 @@
 use std::{str::FromStr, sync::Arc};
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use rust_decimal::Decimal;
 
 use crate::{
     app::AppState,
     formatting::format_decimal_4,
+    http::authorize,
     models::{
         CommandCatalogResponse, CommandDefinition, CommandOptionDefinition, CommandRequest,
         CommandResponse,
@@ -91,8 +96,11 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
 
 pub(crate) async fn control_command(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<CommandRequest>,
 ) -> Result<Json<CommandResponse>, (StatusCode, String)> {
+    authorize(&headers, state.spoke_command_auth_token.as_str())?;
+
     if request.context.discord_user_id.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,

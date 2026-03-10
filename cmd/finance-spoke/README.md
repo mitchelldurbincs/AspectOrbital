@@ -35,6 +35,7 @@
 - `FINANCE_NOTIFY_CHANNEL`
 - `HUB_NOTIFY_URL`
 - `HUB_NOTIFY_AUTH_TOKEN`
+- `SPOKE_COMMAND_AUTH_TOKEN`
 
 ## Local run
 
@@ -57,7 +58,7 @@ go run ./cmd/finance-spoke
 - `POST /plaid/link-token`
 - `POST /plaid/exchange-public-token`
 
-`POST /control/command` requires `context.discordUserId` in the JSON body.
+`POST /control/command` requires `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}` and `context.discordUserId` in the JSON body.
 
 ## Discord command catalog
 

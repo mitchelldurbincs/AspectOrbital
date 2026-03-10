@@ -172,7 +172,7 @@ func TestTruncateForDiscord(t *testing.T) {
 }
 
 func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
-	bridge := spokebridge.NewBridge(nil, nil, "", "", map[string]spokebridge.CommandSpec{
+	bridge := spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{
 		"status": {
 			Name:        "status",
 			Description: "status desc",

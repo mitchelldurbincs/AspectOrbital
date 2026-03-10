@@ -38,9 +38,29 @@ pub struct PersistedTriggerRule {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TriggerRuleState {
     pub was_condition_true: bool,
+    #[serde(default)]
+    pub phase: TriggerRulePhase,
     pub last_triggered_at: Option<DateTime<Utc>>,
     pub last_client_order_id: Option<String>,
+    #[serde(default)]
+    pub pending_started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub pending_client_order_id: Option<String>,
     pub last_action: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerRulePhase {
+    Idle,
+    SellPending,
+    Triggered,
+}
+
+impl Default for TriggerRulePhase {
+    fn default() -> Self {
+        Self::Idle
+    }
 }
 
 pub struct StateStore {
@@ -174,6 +194,57 @@ impl StateStore {
         let snapshot = entry.clone();
         self.save_locked(&guard)?;
         Ok(Some(snapshot))
+    }
+
+    pub async fn mark_rule_sell_pending(
+        &self,
+        rule_id: &str,
+        client_order_id: Option<String>,
+        action: String,
+    ) -> Result<Option<PersistedTriggerRule>> {
+        self.update_rule(rule_id, move |entry| {
+            entry.state.was_condition_true = true;
+            entry.state.phase = TriggerRulePhase::SellPending;
+            entry.state.pending_started_at = Some(Utc::now());
+            entry.state.pending_client_order_id = client_order_id.clone();
+            entry.state.last_action = Some(action.clone());
+        })
+        .await
+    }
+
+    pub async fn mark_rule_triggered(
+        &self,
+        rule_id: &str,
+        client_order_id: Option<String>,
+        action: String,
+    ) -> Result<Option<PersistedTriggerRule>> {
+        self.update_rule(rule_id, move |entry| {
+            entry.state.was_condition_true = true;
+            entry.state.phase = TriggerRulePhase::Triggered;
+            entry.state.last_triggered_at = Some(Utc::now());
+            entry.state.last_client_order_id = client_order_id
+                .clone()
+                .or_else(|| entry.state.pending_client_order_id.clone());
+            entry.state.pending_started_at = None;
+            entry.state.pending_client_order_id = None;
+            entry.state.last_action = Some(action.clone());
+        })
+        .await
+    }
+
+    pub async fn mark_rule_rearmed(
+        &self,
+        rule_id: &str,
+        action: String,
+    ) -> Result<Option<PersistedTriggerRule>> {
+        self.update_rule(rule_id, move |entry| {
+            entry.state.was_condition_true = false;
+            entry.state.phase = TriggerRulePhase::Idle;
+            entry.state.pending_started_at = None;
+            entry.state.pending_client_order_id = None;
+            entry.state.last_action = Some(action.clone());
+        })
+        .await
     }
 
     pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
@@ -335,5 +406,77 @@ mod tests {
         let snapshot = runtime.block_on(store.snapshot());
         assert!(snapshot.trigger_rules.is_empty());
         assert!(snapshot.rules_initialized);
+    }
+
+    #[test]
+    fn mark_rule_sell_pending_persists_pending_phase() {
+        let dir = tempdir().expect("create tempdir");
+        let path = dir.path().join("state.json");
+
+        let store = StateStore::load(&path).expect("load state store");
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+        let rule =
+            TriggerRule::yes_bid_crosses_above("FIRST", Decimal::new(60, 2)).expect("rule builds");
+
+        runtime
+            .block_on(store.set_yes_bid_rule(rule.clone()))
+            .expect("rule save succeeds");
+        runtime
+            .block_on(store.mark_rule_sell_pending(
+                &rule.id,
+                Some("coid-1".to_string()),
+                "pending".to_string(),
+            ))
+            .expect("pending save succeeds");
+
+        let snapshot = runtime.block_on(store.snapshot());
+        let saved = snapshot
+            .trigger_rules
+            .get(&rule.id)
+            .expect("saved rule exists");
+        assert!(saved.state.was_condition_true);
+        assert_eq!(saved.state.phase, TriggerRulePhase::SellPending);
+        assert_eq!(
+            saved.state.pending_client_order_id.as_deref(),
+            Some("coid-1")
+        );
+        assert!(saved.state.pending_started_at.is_some());
+    }
+
+    #[test]
+    fn mark_rule_triggered_clears_pending_fields() {
+        let dir = tempdir().expect("create tempdir");
+        let path = dir.path().join("state.json");
+
+        let store = StateStore::load(&path).expect("load state store");
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+        let rule =
+            TriggerRule::yes_bid_crosses_above("FIRST", Decimal::new(60, 2)).expect("rule builds");
+
+        runtime
+            .block_on(store.set_yes_bid_rule(rule.clone()))
+            .expect("rule save succeeds");
+        runtime
+            .block_on(store.mark_rule_sell_pending(
+                &rule.id,
+                Some("coid-1".to_string()),
+                "pending".to_string(),
+            ))
+            .expect("pending save succeeds");
+        runtime
+            .block_on(store.mark_rule_triggered(&rule.id, None, "triggered".to_string()))
+            .expect("triggered save succeeds");
+
+        let snapshot = runtime.block_on(store.snapshot());
+        let saved = snapshot
+            .trigger_rules
+            .get(&rule.id)
+            .expect("saved rule exists");
+        assert!(saved.state.was_condition_true);
+        assert_eq!(saved.state.phase, TriggerRulePhase::Triggered);
+        assert_eq!(saved.state.last_client_order_id.as_deref(), Some("coid-1"));
+        assert!(saved.state.last_triggered_at.is_some());
+        assert!(saved.state.pending_started_at.is_none());
+        assert!(saved.state.pending_client_order_id.is_none());
     }
 }

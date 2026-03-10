@@ -29,6 +29,7 @@
 - `BEEMINDER_GOAL_SLUGS` (comma-separated)
 - `HUB_NOTIFY_URL`
 - `HUB_NOTIFY_AUTH_TOKEN`
+- `SPOKE_COMMAND_AUTH_TOKEN`
 - `BEEMINDER_NOTIFY_CHANNEL`
 
 Configure these in the repository root `.env`.
@@ -62,10 +63,12 @@ curl -X POST http://127.0.0.1:8090/control/snooze \
   -d '{"duration":"45m"}'
 
 curl -X POST http://127.0.0.1:8090/control/command \
+  -H "Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"command":"status","context":{"discordUserId":"local-user"}}'
 
 curl -X POST http://127.0.0.1:8090/control/command \
+  -H "Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"command":"b-snooze","context":{"discordUserId":"local-user"},"options":{"duration":"1h"}}'
 ```
@@ -88,3 +91,5 @@ Command names are configurable via env (`BEEMINDER_COMMAND_*`), so Discord slash
 
 - `GET /control/commands`
 - `POST /control/command`
+
+`POST /control/command` requires both `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}` and `context.discordUserId`.

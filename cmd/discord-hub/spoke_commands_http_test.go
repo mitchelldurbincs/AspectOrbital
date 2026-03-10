@@ -25,7 +25,7 @@ func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
 
 	commands, err := bridge.FetchCommands(context.Background())
 	if err != nil {
@@ -46,7 +46,7 @@ func TestFetchCommandsReturnsErrorForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
 
 	_, err := bridge.FetchCommands(context.Background())
 	if err == nil {
@@ -64,6 +64,9 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("unexpected method: %s", r.Method)
 		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-command-token" {
+			t.Fatalf("unexpected authorization header: %q", got)
+		}
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 			t.Fatalf("failed to decode request body: %v", err)
 		}
@@ -73,7 +76,7 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "test-command-token", server.URL, server.URL, nil)
 
 	message, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, map[string]any{
 		"duration": " 30m ",
@@ -111,7 +114,7 @@ func TestExecuteCommandRejectsMissingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
 
 	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {
@@ -125,7 +128,7 @@ func TestExecuteCommandReturnsErrorMessageForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, nil)
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
 
 	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {

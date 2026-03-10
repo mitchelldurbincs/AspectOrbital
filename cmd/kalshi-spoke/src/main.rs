@@ -78,6 +78,7 @@ async fn main() -> Result<()> {
     let app_state = Arc::new(AppState {
         started_at: Utc::now(),
         config: config.public(),
+        spoke_command_auth_token: config.spoke_command_auth_token.clone(),
         kalshi: kalshi.clone(),
         market_details_cache: Arc::new(MarketDetailsCache::new(MARKET_DETAILS_CACHE_TTL)),
         runtime: runtime.clone(),

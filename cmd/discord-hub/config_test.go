@@ -15,6 +15,7 @@ func clearHubEnv(t *testing.T) {
 		"DISCORD_GUILD_ID",
 		"HUB_HTTP_ADDR",
 		"HUB_NOTIFY_AUTH_TOKEN",
+		"SPOKE_COMMAND_AUTH_TOKEN",
 		"HUB_CALLBACK_AUTH_TOKEN",
 		"DISCORD_CRITICAL_MENTION",
 		"DISCORD_CHANNEL_MAP",
@@ -36,6 +37,7 @@ func setHubRequiredEnv(t *testing.T) {
 	t.Setenv("DISCORD_GUILD_ID", "guild-1")
 	t.Setenv("HUB_HTTP_ADDR", "127.0.0.1:8080")
 	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
+	t.Setenv("SPOKE_COMMAND_AUTH_TOKEN", "test-command-token")
 	t.Setenv("HUB_CALLBACK_AUTH_TOKEN", "test-callback-token")
 	t.Setenv("DISCORD_CRITICAL_MENTION", "<@123>")
 	t.Setenv("SPOKE_COMMANDS_ENABLED", "false")

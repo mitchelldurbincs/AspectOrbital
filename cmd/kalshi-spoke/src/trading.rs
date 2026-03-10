@@ -14,6 +14,7 @@ pub(crate) async fn attempt_sell(
     discord: &DiscordClient,
     market_ticker: &str,
     yes_price: &str,
+    client_order_id: &str,
 ) -> Result<SellOutcome> {
     let position_fp = kalshi
         .fetch_yes_position(market_ticker, config.subaccount)
@@ -36,7 +37,6 @@ pub(crate) async fn attempt_sell(
     }
 
     let count_fp = format_decimal_2(position_fp);
-    let client_order_id = build_client_order_id(market_ticker);
 
     if config.dry_run {
         let message = format!(
@@ -49,7 +49,7 @@ pub(crate) async fn attempt_sell(
 
         return Ok(SellOutcome {
             summary: format!("dry-run sell prepared for {} contracts", count_fp),
-            client_order_id: Some(client_order_id),
+            client_order_id: Some(client_order_id.to_string()),
         });
     }
 
@@ -58,7 +58,7 @@ pub(crate) async fn attempt_sell(
             market_ticker,
             &count_fp,
             yes_price,
-            &client_order_id,
+            client_order_id,
             config.subaccount,
         )
         .await
@@ -86,11 +86,11 @@ pub(crate) async fn attempt_sell(
 
     Ok(SellOutcome {
         summary,
-        client_order_id: Some(client_order_id),
+        client_order_id: Some(client_order_id.to_string()),
     })
 }
 
-fn build_client_order_id(market_ticker: &str) -> String {
+pub(crate) fn build_client_order_id(market_ticker: &str) -> String {
     let mut normalized: String = market_ticker
         .chars()
         .map(|ch| {

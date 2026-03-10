@@ -13,6 +13,7 @@ use crate::{
 pub(crate) struct AppState {
     pub(crate) started_at: DateTime<Utc>,
     pub(crate) config: PublicConfig,
+    pub(crate) spoke_command_auth_token: String,
     pub(crate) kalshi: Arc<KalshiClient>,
     pub(crate) market_details_cache: Arc<MarketDetailsCache>,
     pub(crate) runtime: Arc<RuntimeState>,

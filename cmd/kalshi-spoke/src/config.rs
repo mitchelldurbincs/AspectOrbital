@@ -11,6 +11,7 @@ pub struct Config {
     pub http_addr: String,
     pub hub_notify_url: String,
     pub hub_notify_auth_token: String,
+    pub spoke_command_auth_token: String,
     pub notify_channel: String,
     pub notify_severity: String,
     pub state_file: PathBuf,
@@ -31,12 +32,8 @@ pub struct Config {
 pub struct PublicConfig {
     pub enabled: bool,
     pub http_addr: String,
-    pub hub_notify_url: String,
     pub notify_channel: String,
     pub notify_severity: String,
-    pub state_file: String,
-    pub kalshi_api_base_url: String,
-    pub kalshi_ws_url: String,
     pub market_tickers: Vec<String>,
     pub bootstrap_trigger_rules: Vec<TriggerRule>,
     pub auto_sell_enabled: bool,
@@ -52,6 +49,7 @@ impl Config {
         let http_addr = string_env_required("KALSHI_SPOKE_HTTP_ADDR")?;
         let hub_notify_url = string_env_required("HUB_NOTIFY_URL")?;
         let hub_notify_auth_token = string_env_required("HUB_NOTIFY_AUTH_TOKEN")?;
+        let spoke_command_auth_token = string_env_required("SPOKE_COMMAND_AUTH_TOKEN")?;
         let notify_channel = string_env_required("KALSHI_NOTIFY_CHANNEL")?;
         let notify_severity = normalize_severity(&string_env_required("KALSHI_NOTIFY_SEVERITY")?)?;
         let state_file = PathBuf::from(string_env_required("KALSHI_STATE_FILE")?);
@@ -96,6 +94,7 @@ impl Config {
             http_addr,
             hub_notify_url,
             hub_notify_auth_token,
+            spoke_command_auth_token,
             notify_channel,
             notify_severity,
             state_file,
@@ -117,12 +116,8 @@ impl Config {
         PublicConfig {
             enabled: self.enabled,
             http_addr: self.http_addr.clone(),
-            hub_notify_url: self.hub_notify_url.clone(),
             notify_channel: self.notify_channel.clone(),
             notify_severity: self.notify_severity.clone(),
-            state_file: self.state_file.to_string_lossy().to_string(),
-            kalshi_api_base_url: self.kalshi_api_base_url.clone(),
-            kalshi_ws_url: self.kalshi_ws_url.clone(),
             market_tickers: self.market_tickers.clone(),
             bootstrap_trigger_rules: self.bootstrap_trigger_rules.clone(),
             auto_sell_enabled: self.auto_sell_enabled,

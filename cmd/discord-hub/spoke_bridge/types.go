@@ -29,6 +29,7 @@ var slashCommandNameRegex = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 type Bridge struct {
 	log           *log.Logger
 	httpClient    *http.Client
+	authToken     string
 	services      map[string]ServiceDefinition
 	serviceOrder  []string
 	commandOwners map[string]string
@@ -59,17 +60,17 @@ type commandResponse struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-func NewBridge(logger *log.Logger, httpClient *http.Client, commandsURL, commandURL string, commands map[string]CommandSpec) *Bridge {
+func NewBridge(logger *log.Logger, httpClient *http.Client, authToken, commandsURL, commandURL string, commands map[string]CommandSpec) *Bridge {
 	service := ServiceDefinition{
 		Name:        defaultServiceName,
 		CommandsURL: commandsURL,
 		ExecuteURL:  commandURL,
 	}
 
-	return NewBridgeWithServices(logger, httpClient, []ServiceDefinition{service}, commands, nil)
+	return NewBridgeWithServices(logger, httpClient, strings.TrimSpace(authToken), []ServiceDefinition{service}, commands, nil)
 }
 
-func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, services []ServiceDefinition, commands map[string]CommandSpec, commandOwners map[string]string) *Bridge {
+func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, authToken string, services []ServiceDefinition, commands map[string]CommandSpec, commandOwners map[string]string) *Bridge {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: CommandHTTPTimeout}
 	}
@@ -100,6 +101,7 @@ func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, services
 	return &Bridge{
 		log:           logger,
 		httpClient:    httpClient,
+		authToken:     strings.TrimSpace(authToken),
 		services:      serviceMap,
 		serviceOrder:  serviceOrder,
 		commandOwners: owners,

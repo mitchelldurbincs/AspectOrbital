@@ -15,10 +15,11 @@ import (
 type config struct {
 	HTTPAddr string `envconfig:"FINANCE_SPOKE_HTTP_ADDR" required:"true"`
 
-	HubNotifyURL        string `envconfig:"HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken  string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
-	NotifyTargetChannel string `envconfig:"FINANCE_NOTIFY_CHANNEL" required:"true"`
-	NotifySeverity      string `envconfig:"FINANCE_NOTIFY_SEVERITY" required:"true"`
+	HubNotifyURL          string `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken    string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	SpokeCommandAuthToken string `envconfig:"SPOKE_COMMAND_AUTH_TOKEN" required:"true"`
+	NotifyTargetChannel   string `envconfig:"FINANCE_NOTIFY_CHANNEL" required:"true"`
+	NotifySeverity        string `envconfig:"FINANCE_NOTIFY_SEVERITY" required:"true"`
 
 	SummaryEnabled      bool          `envconfig:"FINANCE_SUMMARY_ENABLED" required:"true"`
 	SummaryTitle        string        `envconfig:"FINANCE_SUMMARY_TITLE" required:"true"`

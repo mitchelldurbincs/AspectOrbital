@@ -12,6 +12,7 @@ type hubConfig struct {
 	GuildID              string `envconfig:"DISCORD_GUILD_ID" required:"true"`
 	HTTPAddr             string `envconfig:"HUB_HTTP_ADDR" required:"true"`
 	NotifyAuthToken      string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	SpokeCommandAuthToken string `envconfig:"SPOKE_COMMAND_AUTH_TOKEN" required:"true"`
 	CallbackAuthToken    string `envconfig:"HUB_CALLBACK_AUTH_TOKEN" required:"true"`
 	CriticalMention      string `envconfig:"DISCORD_CRITICAL_MENTION" required:"true"`
 	SpokeCommandsEnabled bool   `envconfig:"SPOKE_COMMANDS_ENABLED" required:"true"`

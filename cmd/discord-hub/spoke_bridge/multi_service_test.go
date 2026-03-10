@@ -27,6 +27,7 @@ func TestFetchAllCommandsWithRetryMergesCatalogs(t *testing.T) {
 	bridge := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
+		"",
 		[]ServiceDefinition{
 			{Name: "alpha", CommandsURL: alpha.URL, ExecuteURL: alpha.URL},
 			{Name: "bravo", CommandsURL: bravo.URL, ExecuteURL: bravo.URL},
@@ -65,6 +66,7 @@ func TestFetchAllCommandsWithRetryRejectsDuplicateCommands(t *testing.T) {
 	bridge := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
+		"",
 		[]ServiceDefinition{
 			{Name: "alpha", CommandsURL: alpha.URL, ExecuteURL: alpha.URL},
 			{Name: "bravo", CommandsURL: bravo.URL, ExecuteURL: bravo.URL},
@@ -91,6 +93,7 @@ func TestFetchAllCommandsWithRetryContinuesWhenOneServiceUnavailable(t *testing.
 	bridge := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
+		"",
 		[]ServiceDefinition{
 			{Name: "alpha", CommandsURL: alpha.URL, ExecuteURL: alpha.URL},
 			{Name: "bravo", CommandsURL: "http://127.0.0.1:1", ExecuteURL: "http://127.0.0.1:1"},
@@ -122,6 +125,7 @@ func TestFetchAllCommandsWithRetryReturnsErrorWhenNoServicesReachable(t *testing
 	bridge := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		http.DefaultClient,
+		"",
 		[]ServiceDefinition{{Name: "alpha", CommandsURL: "http://127.0.0.1:1", ExecuteURL: "http://127.0.0.1:1"}},
 		nil,
 		nil,
@@ -160,6 +164,7 @@ func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 	bridge := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
+		"",
 		[]ServiceDefinition{
 			{Name: "alpha", CommandsURL: alpha.URL, ExecuteURL: alpha.URL},
 			{Name: "bravo", CommandsURL: bravo.URL, ExecuteURL: bravo.URL},

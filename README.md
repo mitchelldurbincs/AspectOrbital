@@ -85,6 +85,8 @@ docker compose up --build
 
 All services read configuration from the root `.env` file.
 
+Spoke command execution now requires `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}`; `discord-hub` injects that header when routing slash commands to spoke `POST /control/command` endpoints.
+
 ## Documentation
 
 - [COMMANDS.md](COMMANDS.md) — Discord slash command reference

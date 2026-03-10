@@ -58,6 +58,7 @@ Other common vars:
 - `KALSHI_TRIGGER_RULES` (optional `TICKER=0.1234` pairs, comma-separated; boots YES bid crossing rules)
 - `HUB_NOTIFY_URL`
 - `HUB_NOTIFY_AUTH_TOKEN`
+- `SPOKE_COMMAND_AUTH_TOKEN`
 - `KALSHI_NOTIFY_CHANNEL`
 - `KALSHI_SUBACCOUNT`
 
@@ -78,7 +79,9 @@ cargo run --manifest-path cmd/kalshi-spoke/Cargo.toml
 - `GET /control/commands`
 - `POST /control/command`
 
-`POST /control/command` requires `context.discordUserId` in the JSON body.
+`GET /status` and `POST /control/command` both require `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}`.
+
+`POST /control/command` also requires `context.discordUserId` in the JSON body.
 
 Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
 
@@ -98,6 +101,7 @@ Show current rule state:
 
 ```bash
 curl -X POST http://127.0.0.1:8092/control/command \
+  -H "Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"command":"kalshi-rules","context":{"discordUserId":"local-user"}}'
 ```
@@ -106,6 +110,7 @@ Set a YES bid crossing rule for a tracked ticker:
 
 ```bash
 curl -X POST http://127.0.0.1:8092/control/command \
+  -H "Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"command":"kalshi-rule-set","context":{"discordUserId":"local-user"},"options":{"ticker":"INX-TEST-1","threshold_dollars":0.6000}}'
 ```
@@ -114,6 +119,7 @@ Remove a rule and return the market to observe-only mode:
 
 ```bash
 curl -X POST http://127.0.0.1:8092/control/command \
+  -H "Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"command":"kalshi-rule-remove","context":{"discordUserId":"local-user"},"options":{"ticker":"INX-TEST-1"}}'
 ```

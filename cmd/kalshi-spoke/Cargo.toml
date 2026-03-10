@@ -18,6 +18,7 @@ rust_decimal = "1.36"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+subtle = "2.6"
 tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"

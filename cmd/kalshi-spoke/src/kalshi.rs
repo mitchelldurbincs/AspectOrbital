@@ -39,6 +39,15 @@ pub struct CreatedOrder {
 }
 
 #[derive(Debug, Clone)]
+pub struct OrderSnapshot {
+    pub order_id: String,
+    pub client_order_id: String,
+    pub status: String,
+    pub fill_count_fp: String,
+    pub remaining_count_fp: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct MarketPositionSnapshot {
     pub ticker: String,
     pub position_fp: Decimal,
@@ -59,6 +68,25 @@ struct GetPositionsResponse {
     cursor: Option<String>,
     #[serde(default)]
     market_positions: Vec<MarketPosition>,
+}
+
+#[derive(Deserialize)]
+struct GetOrdersResponse {
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    orders: Vec<OrderRecord>,
+}
+
+#[derive(Deserialize)]
+struct OrderRecord {
+    order_id: String,
+    client_order_id: String,
+    status: String,
+    #[serde(default)]
+    fill_count_fp: Option<String>,
+    #[serde(default)]
+    remaining_count_fp: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -266,6 +294,62 @@ impl KalshiClient {
         }
 
         Ok(positions)
+    }
+
+    pub async fn fetch_order_by_client_order_id(
+        &self,
+        market_ticker: &str,
+        subaccount: u32,
+        client_order_id: &str,
+    ) -> Result<Option<OrderSnapshot>> {
+        let mut cursor: Option<String> = None;
+        let target_client_order_id = client_order_id.trim();
+        if target_client_order_id.is_empty() {
+            return Ok(None);
+        }
+
+        loop {
+            let mut query = vec![
+                ("ticker", market_ticker.trim().to_string()),
+                ("subaccount", subaccount.to_string()),
+                ("limit", "200".to_string()),
+            ];
+            if let Some(value) = cursor.as_deref() {
+                query.push(("cursor", value.to_string()));
+            }
+
+            let response: GetOrdersResponse =
+                self.authed_get_json("/portfolio/orders", &query).await?;
+            if let Some(order) = response.orders.into_iter().find(|entry| {
+                entry
+                    .client_order_id
+                    .trim()
+                    .eq_ignore_ascii_case(target_client_order_id)
+            }) {
+                return Ok(Some(OrderSnapshot {
+                    order_id: order.order_id,
+                    client_order_id: order.client_order_id,
+                    status: order.status,
+                    fill_count_fp: order.fill_count_fp.unwrap_or_else(|| "0.00".to_string()),
+                    remaining_count_fp: order
+                        .remaining_count_fp
+                        .unwrap_or_else(|| "0.00".to_string()),
+                }));
+            }
+
+            let next_cursor = response
+                .cursor
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+            if next_cursor.is_none() {
+                break;
+            }
+            cursor = next_cursor;
+        }
+
+        Ok(None)
     }
 
     pub async fn fetch_market_details(&self, market_ticker: &str) -> Result<MarketDetails> {

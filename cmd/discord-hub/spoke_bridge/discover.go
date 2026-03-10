@@ -31,7 +31,7 @@ func DiscoverWithStatus(logger *log.Logger) (*Bridge, error) {
 		return nil, err
 	}
 
-	bridge := NewBridgeWithServices(logger, &http.Client{Timeout: CommandHTTPTimeout}, services, nil, nil)
+	bridge := NewBridgeWithServices(logger, &http.Client{Timeout: CommandHTTPTimeout}, strings.TrimSpace(os.Getenv("SPOKE_COMMAND_AUTH_TOKEN")), services, nil, nil)
 
 	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
 	if err != nil {

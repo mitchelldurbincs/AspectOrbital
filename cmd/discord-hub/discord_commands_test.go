@@ -138,7 +138,7 @@ func TestUpsertSpokeCommandsReusesListedCommands(t *testing.T) {
 		existing: []*discordgo.ApplicationCommand{{ID: "status-1", Name: "status", Description: "old"}},
 	}
 
-	bridge := spokebridge.NewBridge(nil, nil, "", "", map[string]spokebridge.CommandSpec{
+	bridge := spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{
 		"status": {Name: "status", Description: "new status"},
 		"resume": {Name: "resume", Description: "resume"},
 	})
@@ -162,7 +162,7 @@ func TestUpsertSpokeCommandsReusesListedCommands(t *testing.T) {
 func TestUpsertSpokeCommandsReturnsListError(t *testing.T) {
 	client := &fakeCommandRegistrar{listErr: errors.New("listing failed")}
 
-	err := upsertSpokeCommands(client, "app", "guild", spokebridge.NewBridge(nil, nil, "", "", map[string]spokebridge.CommandSpec{"status": {Name: "status"}}))
+	err := upsertSpokeCommands(client, "app", "guild", spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{"status": {Name: "status"}}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

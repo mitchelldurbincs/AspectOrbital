@@ -25,6 +25,7 @@ Minimum required settings for a local run:
 - `ACCOUNTABILITY_REMINDER_INTERVAL` - minimum spacing between reminder notifications.
 - `ACCOUNTABILITY_CHECKIN_QUIET_PERIOD` - how long `/checkin` pauses reminders.
 - `HUB_NOTIFY_URL` and `HUB_NOTIFY_AUTH_TOKEN` - hub notification endpoint and bearer token.
+- `SPOKE_COMMAND_AUTH_TOKEN` - bearer token required by `POST /control/command`.
 - `ACCOUNTABILITY_DISCORD_CALLBACK_URL` and `ACCOUNTABILITY_CALLBACK_AUTH_TOKEN` - callback endpoint and bearer token for reminder action buttons.
 - `ACCOUNTABILITY_NOTIFY_CHANNEL` and `ACCOUNTABILITY_NOTIFY_SEVERITY` - default target for overdue reminders.
 - `ACCOUNTABILITY_POLICY_FILE` - JSON policy catalog path.
@@ -49,6 +50,7 @@ ACCOUNTABILITY_REMINDER_INTERVAL=5m
 ACCOUNTABILITY_CHECKIN_QUIET_PERIOD=10m
 HUB_NOTIFY_URL=http://127.0.0.1:8080/notify
 HUB_NOTIFY_AUTH_TOKEN=replace-with-long-random-token
+SPOKE_COMMAND_AUTH_TOKEN=replace-with-long-random-token
 ACCOUNTABILITY_DISCORD_CALLBACK_URL=http://127.0.0.1:8093/discord/callback
 ACCOUNTABILITY_CALLBACK_AUTH_TOKEN=replace-with-long-random-token
 ACCOUNTABILITY_NOTIFY_CHANNEL=accountability
@@ -80,6 +82,8 @@ Default command names are configurable with `ACCOUNTABILITY_COMMAND_*` env vars.
 - `/a-snooze [duration:"10m"]`
 
 Reminder action buttons POST to `/discord/callback` and require `Authorization: Bearer <ACCOUNTABILITY_CALLBACK_AUTH_TOKEN>`.
+
+`POST /control/command` requires `Authorization: Bearer <SPOKE_COMMAND_AUTH_TOKEN>` plus `context.discordUserId`.
 
 Deadline input supports:
 

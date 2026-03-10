@@ -50,6 +50,9 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if b.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+b.authToken)
+	}
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
