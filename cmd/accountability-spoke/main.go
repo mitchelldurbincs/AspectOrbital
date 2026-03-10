@@ -65,10 +65,10 @@ func run(logger *log.Logger) error {
 	defer loopCancel()
 	go service.StartExpiryLoop(loopCtx)
 	go startReminderLoop(loopCtx, logger, cfg, service, hub)
-	if _, err := service.ExpireOverdue(context.Background()); err != nil {
+	if _, err := service.ExpireOverdue(loopCtx); err != nil {
 		logger.Printf("initial expiry sweep failed: %v", err)
 	}
-	if err := runReminderSweep(context.Background(), logger, cfg, service, hub); err != nil {
+	if err := runReminderSweep(loopCtx, logger, cfg, service, hub); err != nil {
 		logger.Printf("initial reminder sweep failed: %v", err)
 	}
 

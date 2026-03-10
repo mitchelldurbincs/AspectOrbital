@@ -3,11 +3,10 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"sort"
-	"strings"
 	"time"
 
 	"personal-infrastructure/pkg/spokecontract"
+	"personal-infrastructure/pkg/spokecontrol"
 )
 
 type commandRequest = spokecontract.CommandRequest
@@ -45,12 +44,12 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.Context.DiscordUserID) == "" {
-		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
+	if err := spokecontrol.ValidateDiscordUser(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	commandName := spokecontract.NormalizeCommandName(req.Command)
+	commandName := spokecontrol.NormalizeCommand(req)
 	switch commandName {
 	case commandNameStatus:
 		now := time.Now()
@@ -60,19 +59,8 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			a.cfg.SummaryEnabled,
 			a.scheduler.nextScheduleAfter(now).In(a.location).Format(time.RFC3339),
 		)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"command": commandNameStatus,
-			"message": message,
-			"data":    payload,
-		})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(commandNameStatus, message, payload))
 	default:
-		http.Error(w, unknownCommandError(req.Command, []string{commandNameStatus}), http.StatusBadRequest)
+		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{commandNameStatus}), http.StatusBadRequest)
 	}
-}
-
-func unknownCommandError(requested string, valid []string) string {
-	commands := append([]string(nil), valid...)
-	sort.Strings(commands)
-	return fmt.Sprintf("unknown command %q; valid commands: %s", requested, strings.Join(commands, ", "))
 }

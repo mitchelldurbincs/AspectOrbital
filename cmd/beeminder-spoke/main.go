@@ -2,13 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"personal-infrastructure/pkg/appboot"
@@ -82,41 +78,22 @@ func run(logger *log.Logger) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	httpErrCh := make(chan error, 1)
-	go func() {
-		logger.Printf("control API listening on %s", cfg.HTTPAddr)
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			httpErrCh <- err
-			return
-		}
-		httpErrCh <- nil
-	}()
-
-	if err := app.runCycle(context.Background()); err != nil {
-		logger.Printf("initial beeminder check failed: %v", err)
-	}
-
-	ticker := time.NewTicker(cfg.PollInterval)
-	defer ticker.Stop()
-
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signalCh)
-
 	logger.Printf("tracking Beeminder goals %v for user %q", cfg.BeeminderGoalSlugs, cfg.BeeminderUsername)
 
-	exitErr := lifecycle.WaitForExit(signalCh, httpErrCh, ticker.C, func() {
-		if err := app.runCycle(context.Background()); err != nil {
-			logger.Printf("beeminder check failed: %v", err)
-		}
+	exitErr := lifecycle.RunHTTPService(lifecycle.HTTPServiceOptions{
+		Logger:          logger,
+		Server:          httpServer,
+		ListenMessage:   fmt.Sprintf("control API listening on %s", cfg.HTTPAddr),
+		TickInterval:    cfg.PollInterval,
+		RunImmediately:  true,
+		ShutdownTimeout: 10 * time.Second,
+		OnTick: func(context.Context) error {
+			if err := app.runCycle(context.Background()); err != nil {
+				logger.Printf("beeminder check failed: %v", err)
+			}
+			return nil
+		},
 	})
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Printf("control API shutdown error: %v", err)
-	}
 
 	logger.Println("beeminder-spoke stopped")
 	return exitErr

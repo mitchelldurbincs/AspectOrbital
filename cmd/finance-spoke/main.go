@@ -2,15 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"personal-infrastructure/pkg/appboot"
@@ -81,45 +77,26 @@ func run(logger *log.Logger) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	httpErrCh := make(chan error, 1)
-	go func() {
-		logger.Printf("finance control API listening on %s", cfg.HTTPAddr)
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			httpErrCh <- err
-			return
-		}
-		httpErrCh <- nil
-	}()
-
-	if cfg.SummaryEnabled {
-		if err := app.runDueNow(); err != nil {
-			logger.Printf("initial summary check failed: %v", err)
-		}
-	} else {
+	if !cfg.SummaryEnabled {
 		logger.Println("weekly summary is disabled (FINANCE_SUMMARY_ENABLED=false)")
 	}
 
-	ticker := time.NewTicker(cfg.SummaryPollInterval)
-	defer ticker.Stop()
-
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signalCh)
-
 	logger.Printf("finance-spoke running (next summary at %s)", app.scheduler.nextScheduleAfter(time.Now()).In(location).Format(time.RFC3339))
 
-	exitErr := lifecycle.WaitForExit(signalCh, httpErrCh, ticker.C, func() {
-		if err := app.runDueNow(); err != nil {
-			logger.Printf("summary check failed: %v", err)
-		}
+	exitErr := lifecycle.RunHTTPService(lifecycle.HTTPServiceOptions{
+		Logger:          logger,
+		Server:          httpServer,
+		ListenMessage:   fmt.Sprintf("finance control API listening on %s", cfg.HTTPAddr),
+		TickInterval:    cfg.SummaryPollInterval,
+		RunImmediately:  cfg.SummaryEnabled,
+		ShutdownTimeout: 10 * time.Second,
+		OnTick: func(context.Context) error {
+			if err := app.runDueNow(); err != nil {
+				logger.Printf("summary check failed: %v", err)
+			}
+			return nil
+		},
 	})
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Printf("finance control API shutdown error: %v", err)
-	}
 
 	logger.Println("finance-spoke stopped")
 	return exitErr

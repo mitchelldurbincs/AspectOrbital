@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 
 	"personal-infrastructure/pkg/accountability"
 	"personal-infrastructure/pkg/spokecontract"
+	"personal-infrastructure/pkg/spokecontrol"
 )
 
 type spokeApp struct {
@@ -45,17 +45,17 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 
 func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	var req commandRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	userID := strings.TrimSpace(req.Context.DiscordUserID)
-	if userID == "" {
-		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
+	if err := spokecontrol.ValidateDiscordUser(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	cmd := spokecontract.NormalizeCommandName(req.Command)
+	cmd := spokecontrol.NormalizeCommand(req)
 	now := time.Now()
 	switch cmd {
 	case a.cfg.CommitCommandName:
@@ -74,7 +74,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), "data": commitment})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), commitment))
 	case a.cfg.ProofCommandName:
 		active, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
@@ -109,12 +109,12 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		if commitment.Status == accountability.StatusFailed {
 			message = "Commitment missed deadline before proof was submitted."
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": message, "data": commitment})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.StatusCommandName:
 		commitment, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "not found") {
-				writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": "No active commitment."})
+				writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "No active commitment.", nil))
 				return
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -127,7 +127,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		if !commitment.SnoozedUntil.IsZero() && commitment.SnoozedUntil.After(now) {
 			message = fmt.Sprintf("%s; reminders snoozed until %s", message, commitment.SnoozedUntil.Format(time.RFC3339))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": message, "data": commitment})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.SnoozeCommandName:
 		duration, err := parseSnoozeDuration(mapOptionString(req.Options, "duration"), a.cfg.DefaultSnooze)
 		if err != nil {
@@ -143,7 +143,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), "data": commitment})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), commitment))
 	case a.cfg.CancelCommandName:
 		commitment, err := a.service.Cancel(r.Context(), userID)
 		if err != nil {
@@ -154,9 +154,9 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "command": cmd, "message": "Commitment canceled.", "data": commitment})
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "Commitment canceled.", commitment))
 	default:
-		http.Error(w, "unknown command", http.StatusBadRequest)
+		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{a.cfg.CancelCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName}), http.StatusBadRequest)
 	}
 }
 
@@ -224,10 +224,4 @@ func mapOptionString(m map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(v))
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
 }

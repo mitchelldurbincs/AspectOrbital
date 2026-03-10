@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/spokecontract"
+	"personal-infrastructure/pkg/spokecontrol"
 )
 
 func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[string]any, int, error) {
-	command := request.normalizedCommand()
+	command := spokecontrol.NormalizeCommand(spokecontrol.Request(request))
 	if command == "" {
 		return nil, http.StatusBadRequest, errors.New("command is required")
 	}
@@ -21,12 +22,9 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 	switch command {
 	case a.cfg.Commands.Started:
 		until := a.engine.MarkStarted(now)
-		return map[string]any{
-			"status":       "ok",
-			"command":      a.cfg.Commands.Started,
-			"message":      fmt.Sprintf("Got it. Paused reminders until %s.", formatClockInLocation(until, a.location)),
-			"snoozedUntil": until,
-		}, http.StatusOK, nil
+		result := spokecontrol.OK(a.cfg.Commands.Started, fmt.Sprintf("Got it. Paused reminders until %s.", formatClockInLocation(until, a.location)), nil)
+		result["snoozedUntil"] = until
+		return result, http.StatusOK, nil
 	case a.cfg.Commands.Snooze:
 		durationInput := request.optionString(snoozeDurationOptionName)
 
@@ -41,31 +39,19 @@ func (a *spokeApp) executeCommand(now time.Time, request commandRequest) (map[st
 			message = fmt.Sprintf("Snoozed reminders for %s (until %s, capped by policy).", duration, formatClockInLocation(until, a.location))
 		}
 
-		return map[string]any{
-			"status":       "ok",
-			"command":      a.cfg.Commands.Snooze,
-			"message":      message,
-			"duration":     duration.String(),
-			"capped":       capped,
-			"snoozedUntil": until,
-		}, http.StatusOK, nil
+		result := spokecontrol.OK(a.cfg.Commands.Snooze, message, nil)
+		result["duration"] = duration.String()
+		result["capped"] = capped
+		result["snoozedUntil"] = until
+		return result, http.StatusOK, nil
 	case a.cfg.Commands.Resume:
 		a.engine.Resume(now)
-		return map[string]any{
-			"status":  "ok",
-			"command": a.cfg.Commands.Resume,
-			"message": "Reminders resumed.",
-		}, http.StatusOK, nil
+		return spokecontrol.OK(a.cfg.Commands.Resume, "Reminders resumed.", nil), http.StatusOK, nil
 	case a.cfg.Commands.Status:
 		status := a.engine.Status()
-		return map[string]any{
-			"status":  "ok",
-			"command": a.cfg.Commands.Status,
-			"message": summarizeStatus(status, a.location),
-			"data":    status,
-		}, http.StatusOK, nil
+		return spokecontrol.OK(a.cfg.Commands.Status, summarizeStatus(status, a.location), status), http.StatusOK, nil
 	default:
-		return nil, http.StatusBadRequest, fmt.Errorf("unknown command %q; valid commands: %s", request.Command, strings.Join(a.cfg.Commands.All(), ", "))
+		return nil, http.StatusBadRequest, fmt.Errorf("%s", spokecontrol.UnknownCommandError(request.Command, a.cfg.Commands.All()))
 	}
 }
 
@@ -73,10 +59,6 @@ type commandRequest struct {
 	Command string                       `json:"command"`
 	Context spokecontract.CommandContext `json:"context"`
 	Options map[string]any               `json:"options,omitempty"`
-}
-
-func (c commandRequest) normalizedCommand() string {
-	return spokecontract.NormalizeCommandName(c.Command)
 }
 
 func (c commandRequest) optionString(name string) string {

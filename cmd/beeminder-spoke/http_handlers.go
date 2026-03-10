@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"time"
+
+	"personal-infrastructure/pkg/spokecontrol"
 )
 
 func (a *spokeApp) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -43,8 +45,8 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if payload.Context.DiscordUserID == "" {
-		http.Error(w, "context.discordUserId is required", http.StatusBadRequest)
+	if err := spokecontrol.ValidateDiscordUser(spokecontrol.Request(payload)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
