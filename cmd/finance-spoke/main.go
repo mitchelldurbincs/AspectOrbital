@@ -124,7 +124,7 @@ func (a *financeApp) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpjson.Write(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *financeApp) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +133,7 @@ func (a *financeApp) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, a.statusPayload(time.Now()))
+	httpjson.Write(w, http.StatusOK, a.statusPayload(time.Now()))
 }
 
 func (a *financeApp) handleRunWeeklySummary(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +151,7 @@ func (a *financeApp) handleRunWeeklySummary(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	httpjson.Write(w, http.StatusAccepted, map[string]any{
 		"status":       "ok",
 		"ranAt":        now.UTC(),
 		"weekKey":      weekKeyForSchedule(a.scheduler.latestScheduleAtOrBefore(now)),
@@ -170,7 +170,7 @@ func (a *financeApp) handleCreateLinkToken(w http.ResponseWriter, r *http.Reques
 	}
 
 	var payload createLinkTokenRequest
-	if err := decodeJSONBody(r, &payload); err != nil {
+	if err := httpjson.DecodeBody(r, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -184,7 +184,7 @@ func (a *financeApp) handleCreateLinkToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpjson.Write(w, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"linkToken":  response.LinkToken,
 		"expiration": response.Expiration,
@@ -213,7 +213,7 @@ func (a *financeApp) handleExchangePublicToken(w http.ResponseWriter, r *http.Re
 	}
 
 	var payload exchangePublicTokenRequest
-	if err := decodeJSONBody(r, &payload); err != nil {
+	if err := httpjson.DecodeBody(r, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -233,7 +233,7 @@ func (a *financeApp) handleExchangePublicToken(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpjson.Write(w, http.StatusOK, map[string]any{
 		"status":      "ok",
 		"accessToken": response.AccessToken,
 		"itemId":      response.ItemID,
@@ -247,14 +247,6 @@ type createLinkTokenRequest struct {
 
 type exchangePublicTokenRequest struct {
 	PublicToken string `json:"publicToken"`
-}
-
-func decodeJSONBody(r *http.Request, out any) error {
-	return httpjson.DecodeStrictJSONBody(r, out, 1<<20)
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
-	httpjson.WriteJSON(w, statusCode, payload)
 }
 
 func (a *financeApp) statusPayload(now time.Time) map[string]any {

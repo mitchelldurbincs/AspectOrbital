@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"personal-infrastructure/pkg/httpjson"
 	"personal-infrastructure/pkg/spokecontract"
 	"personal-infrastructure/pkg/spokecontrol"
 )
@@ -20,7 +21,7 @@ func (a *financeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, commandCatalogResponse{
+	httpjson.Write(w, http.StatusOK, commandCatalogResponse{
 		Version: spokecontract.CatalogVersion,
 		Service: commandCatalogService,
 		Commands: []commandDefinition{
@@ -44,7 +45,7 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req commandRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := httpjson.DecodeBody(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -63,7 +64,7 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			a.cfg.SummaryEnabled,
 			a.scheduler.nextScheduleAfter(now).In(a.location).Format(time.RFC3339),
 		)
-		writeJSON(w, http.StatusOK, spokecontrol.OK(commandNameStatus, message, payload))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(commandNameStatus, message, payload))
 	default:
 		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{commandNameStatus}), http.StatusBadRequest)
 	}

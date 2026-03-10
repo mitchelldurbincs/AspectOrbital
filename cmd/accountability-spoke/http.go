@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"personal-infrastructure/pkg/accountability"
+	"personal-infrastructure/pkg/httpjson"
 	"personal-infrastructure/pkg/spokecontract"
 	"personal-infrastructure/pkg/spokecontrol"
 )
@@ -25,11 +26,11 @@ type commandDefinition = spokecontract.CommandSpec
 type commandOptionDefinition = spokecontract.CommandOptionSpec
 
 func (a *spokeApp) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpjson.Write(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, commandCatalogResponse{
+	httpjson.Write(w, http.StatusOK, commandCatalogResponse{
 		Version: spokecontract.CatalogVersion,
 		Service: commandCatalogService,
 		Commands: []commandDefinition{
@@ -55,7 +56,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req commandRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := httpjson.DecodeBody(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -84,7 +85,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			writeAccountabilityError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), commitment))
 	case a.cfg.ProofCommandName:
 		active, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
@@ -117,19 +118,19 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		if commitment.Status == accountability.StatusFailed {
 			message = "Commitment missed deadline before proof was submitted."
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.CheckInCommandName:
 		commitment, err := a.service.CheckIn(r.Context(), userID, mapOptionString(req.Options, "text"), a.cfg.CheckInQuietPeriod)
 		if err != nil {
 			writeAccountabilityError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Check-in recorded. Reminders paused until %s", commitment.CheckInQuietUntil.Format(time.RFC3339)), commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Check-in recorded. Reminders paused until %s", commitment.CheckInQuietUntil.Format(time.RFC3339)), commitment))
 	case a.cfg.StatusCommandName:
 		commitment, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
 			if errors.Is(err, accountability.ErrNotFound) {
-				writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "No active commitment.", nil))
+				httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, "No active commitment.", nil))
 				return
 			}
 			writeAccountabilityError(w, err)
@@ -148,7 +149,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		if !commitment.LastCheckInAt.IsZero() && commitment.LastCheckInText != "" {
 			message = fmt.Sprintf("%s; last check-in %q at %s", message, commitment.LastCheckInText, commitment.LastCheckInAt.Format(time.RFC3339))
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.SnoozeCommandName:
 		duration, err := parseSnoozeDuration(mapOptionString(req.Options, "duration"), a.cfg.DefaultSnooze)
 		if err != nil {
@@ -160,14 +161,14 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			writeAccountabilityError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), commitment))
 	case a.cfg.CancelCommandName:
 		commitment, err := a.service.Cancel(r.Context(), userID)
 		if err != nil {
 			writeAccountabilityError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "Commitment canceled.", commitment))
+		httpjson.Write(w, http.StatusOK, spokecontrol.OK(cmd, "Commitment canceled.", commitment))
 	default:
 		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{a.cfg.CancelCommandName, a.cfg.CheckInCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName}), http.StatusBadRequest)
 	}
