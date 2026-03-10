@@ -10,7 +10,7 @@ COPY pkg ./pkg
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/finance-spoke ./cmd/finance-spoke
 
-FROM alpine:3.21
+FROM alpine:3.23
 
 RUN addgroup -S app && adduser -S app -G app
 
