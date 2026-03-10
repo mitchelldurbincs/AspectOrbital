@@ -40,6 +40,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 
 ### What's working
 
+- CI pipeline for Go/Rust linting, build, tests, and Docker Compose smoke + health checks
 - Hub-and-spoke architecture with HTTP-based service discovery and command registration
 - Discord slash commands for Beeminder reminders (`/started`, `/b-snooze`, `/resume`, `/status`)
 - Discord slash commands for accountability tracking (`/commit`, `/proof`, `/accountability-status`, `/cancel`, `/a-snooze`)
@@ -54,10 +55,20 @@ Personal infrastructure automation platform built as a modular microservice ecos
 
 ### In progress / not yet complete
 
-- **CI/CD** — no automated pipeline; tests and builds are run manually
+- **CD deployment** — production/home-server deploy automation is not wired yet
 - **Test coverage** — coverage is still uneven, but automated tests now exist in `discord-hub`, `beeminder-spoke`, `accountability-spoke`, `finance-spoke`, and shared `pkg/` modules
 - **Kubernetes** — stub directory exists under `deployments/kubernetes/` but no active manifests
 - **Accountability spoke** — not yet added to `docker-compose.yml`
+
+## CI
+
+GitHub Actions runs on push/PR to `main` and currently includes:
+
+- Go: `gofmt` check, `golangci-lint`, `go build`, `go vet`, and `go test`
+- Rust (`kalshi-spoke`): `cargo build`, `cargo test`, `cargo fmt -- --check`, and `cargo clippy -- -D warnings`
+- Docker Compose smoke test: config validation, image build, startup, and `/healthz` checks for `beeminder-spoke`, `finance-spoke`, and `kalshi-spoke`
+
+`discord-hub` is included in compose image builds, but runtime health checks are intentionally skipped in CI for now because it requires a live Discord bot session.
 
 ## Quick Start
 

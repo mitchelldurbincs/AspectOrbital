@@ -20,6 +20,20 @@ jobs:
       - name: Install sqlite3
         run: sudo apt-get update && sudo apt-get install -y sqlite3
 
+      - name: Check Go formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Go files must be formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+
       - name: Build
         run: go build ./...
 
@@ -49,5 +63,147 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Fmt
+        run: cargo fmt -- --check
+
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  compose:
+    name: Compose smoke + health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare CI compose inputs
+        run: |
+          mkdir -p .ci
+          openssl genrsa -out .ci/kalshi-private-key.pem 2048
+
+          cat > .ci/compose.env <<'EOF'
+          HUB_NOTIFY_AUTH_TOKEN=ci-token
+          HUB_NOTIFY_URL=http://discord-hub:8080/notify
+
+          BEEMINDER_SPOKE_HTTP_ADDR=0.0.0.0:8090
+          BEEMINDER_API_BASE_URL=http://beeminder-mock:18080
+          BEEMINDER_AUTH_TOKEN=ci-token
+          BEEMINDER_USERNAME=ci-user
+          BEEMINDER_GOAL_SLUGS=ci-goal
+          BEEMINDER_NOTIFY_CHANNEL=ci-channel
+          BEEMINDER_NOTIFY_SEVERITY=info
+          BEEMINDER_REMINDER_START=19:00
+          BEEMINDER_REMINDER_INTERVAL=5m
+          BEEMINDER_POLL_INTERVAL=1m
+          BEEMINDER_ACTIVE_GRACE=20m
+          BEEMINDER_STARTED_SNOOZE=30m
+          BEEMINDER_DEFAULT_SNOOZE=30m
+          BEEMINDER_MAX_SNOOZE=2h
+          BEEMINDER_REQUIRE_DAILY_RATE=true
+          BEEMINDER_HTTP_TIMEOUT=10s
+          BEEMINDER_DATAPOINTS_PER_PAGE=100
+          BEEMINDER_MAX_DATAPOINT_PAGES=20
+          BEEMINDER_COMMAND_STARTED=started
+          BEEMINDER_COMMAND_SNOOZE=b-snooze
+          BEEMINDER_COMMAND_RESUME=resume
+          BEEMINDER_COMMAND_STATUS=status
+
+          FINANCE_SPOKE_HTTP_ADDR=0.0.0.0:8091
+          FINANCE_NOTIFY_CHANNEL=finance-summary
+          FINANCE_NOTIFY_SEVERITY=info
+          FINANCE_SUMMARY_ENABLED=false
+          FINANCE_SUMMARY_TITLE=Weekly Summary
+          FINANCE_SUMMARY_WEEKDAY=SUN
+          FINANCE_SUMMARY_TIME=18:00
+          FINANCE_SUMMARY_TIMEZONE=UTC
+          FINANCE_SUMMARY_LOOKBACK_DAYS=7
+          FINANCE_SUMMARY_SEND_EMPTY=false
+          FINANCE_SUMMARY_MAX_ITEMS=20
+          FINANCE_SUMMARY_POLL_INTERVAL=1m
+          FINANCE_HTTP_TIMEOUT=15s
+          FINANCE_STATE_FILE=var/finance-spoke/state.json
+
+          PLAID_CLIENT_ID=ci-client-id
+          PLAID_SECRET=ci-secret
+          PLAID_ENV=sandbox
+          PLAID_CLIENT_NAME=Aspect Orbital Finance
+          PLAID_COUNTRY_CODES=US
+          PLAID_LANGUAGE=en
+          PLAID_WEBHOOK_URL=https://example.com/plaid/webhook
+          PLAID_ACCESS_TOKENS=ci-access-token
+
+          KALSHI_SPOKE_ENABLED=false
+          KALSHI_SPOKE_HTTP_ADDR=0.0.0.0:8092
+          KALSHI_NOTIFY_CHANNEL=kalshi-alerts
+          KALSHI_NOTIFY_SEVERITY=info
+          KALSHI_STATE_FILE=var/kalshi-spoke/state.json
+          KALSHI_API_BASE_URL=https://api.elections.kalshi.com/trade-api/v2
+          KALSHI_WS_URL=wss://api.elections.kalshi.com/trade-api/ws/v2
+          KALSHI_ACCESS_KEY=ci-access-key
+          KALSHI_PRIVATE_KEY_PATH=/run/secrets/kalshi-private-key.pem
+          KALSHI_MARKET_TICKERS=INX-TEST-1
+          KALSHI_TRIGGER_YES_BID_DOLLARS=0.6000
+          KALSHI_AUTO_SELL_ENABLED=false
+          KALSHI_DRY_RUN=true
+          KALSHI_SUBACCOUNT=0
+          KALSHI_HTTP_TIMEOUT=15s
+          KALSHI_WS_RECONNECT_DELAY=3s
+          EOF
+
+          cat > deployments/docker-compose.ci.override.yml <<'EOF'
+          services:
+            beeminder-mock:
+              image: hashicorp/http-echo:1.0.0
+              command: ["-listen=:18080", "-type=application/json", "-text={\"username\":\"ci-user\",\"timezone\":\"UTC\"}"]
+              networks:
+                - personal-infra
+
+            beeminder-spoke:
+              depends_on:
+                - beeminder-mock
+
+            kalshi-spoke:
+              volumes:
+                - ../.ci/kalshi-private-key.pem:/run/secrets/kalshi-private-key.pem:ro
+          EOF
+
+      - name: Validate compose config
+        run: docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml config
+        working-directory: deployments
+
+      - name: Build compose services
+        run: docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml build discord-hub beeminder-spoke finance-spoke kalshi-spoke
+        working-directory: deployments
+
+      - name: Start services for health checks
+        run: docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml up -d --no-deps beeminder-mock beeminder-spoke finance-spoke kalshi-spoke
+        working-directory: deployments
+
+      - name: Wait for health endpoints
+        run: |
+          for url in http://127.0.0.1:8090/healthz http://127.0.0.1:8091/healthz http://127.0.0.1:8092/healthz; do
+            success=0
+            for attempt in $(seq 1 30); do
+              if curl -fsS "$url" >/dev/null; then
+                success=1
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "$success" -ne 1 ]; then
+              echo "Health check failed for $url"
+              docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml logs beeminder-spoke finance-spoke kalshi-spoke
+              exit 1
+            fi
+          done
+        working-directory: deployments
+
+      - name: Compose logs
+        if: always()
+        run: docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color
+        working-directory: deployments
+
+      - name: Stop compose stack
+        if: always()
+        run: docker compose --env-file ../.ci/compose.env -f docker-compose.yml -f docker-compose.ci.override.yml down -v
+        working-directory: deployments
