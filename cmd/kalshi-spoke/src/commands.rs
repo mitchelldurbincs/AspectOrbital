@@ -29,11 +29,18 @@ const COMMAND_NAME_POSITIONS: &str = "kalshi-positions";
 const COMMAND_NAME_RULES: &str = "kalshi-rules";
 const COMMAND_NAME_RULE_SET: &str = "kalshi-rule-set";
 const COMMAND_NAME_RULE_REMOVE: &str = "kalshi-rule-remove";
-const COMMAND_NAME_LEGACY_THRESHOLDS: &str = "kalshi-thresholds";
-const COMMAND_NAME_LEGACY_THRESHOLD_SET: &str = "kalshi-threshold-set";
-const COMMAND_NAME_LEGACY_THRESHOLD_REMOVE: &str = "kalshi-threshold-remove";
 const OPTION_NAME_TICKER: &str = "ticker";
 const OPTION_NAME_THRESHOLD_DOLLARS: &str = "threshold_dollars";
+
+fn known_command_names() -> [&'static str; 5] {
+    [
+        COMMAND_NAME_STATUS,
+        COMMAND_NAME_POSITIONS,
+        COMMAND_NAME_RULES,
+        COMMAND_NAME_RULE_SET,
+        COMMAND_NAME_RULE_REMOVE,
+    ]
+}
 
 pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
     Json(CommandCatalogResponse {
@@ -108,7 +115,7 @@ pub(crate) async fn control_command(
         ));
     }
 
-    let command = request.command.trim().to_ascii_lowercase();
+    let command = request.command.clone();
     match command.as_str() {
         COMMAND_NAME_STATUS => {
             let status_payload = build_status_response(state).await;
@@ -145,7 +152,7 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_RULES | COMMAND_NAME_LEGACY_THRESHOLDS => {
+        COMMAND_NAME_RULES => {
             let summary = build_rules_summary(state)
                 .await
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
@@ -166,11 +173,10 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_RULE_SET | COMMAND_NAME_LEGACY_THRESHOLD_SET => {
+        COMMAND_NAME_RULE_SET => {
             let ticker = option_required(&request, OPTION_NAME_TICKER)
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
             let threshold = option_required_decimal(&request, OPTION_NAME_THRESHOLD_DOLLARS)
-                .or_else(|_| option_required_decimal(&request, "yes_bid_dollars"))
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
 
             if threshold <= Decimal::ZERO || threshold >= Decimal::ONE {
@@ -221,7 +227,7 @@ pub(crate) async fn control_command(
                 data,
             }))
         }
-        COMMAND_NAME_RULE_REMOVE | COMMAND_NAME_LEGACY_THRESHOLD_REMOVE => {
+        COMMAND_NAME_RULE_REMOVE => {
             let ticker = option_required(&request, OPTION_NAME_TICKER)
                 .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
 
@@ -261,11 +267,11 @@ pub(crate) async fn control_command(
             format!(
                 "unknown command {:?}; valid commands: {}, {}, {}, {}, {}",
                 request.command,
-                COMMAND_NAME_STATUS,
-                COMMAND_NAME_POSITIONS,
-                COMMAND_NAME_RULES,
-                COMMAND_NAME_RULE_SET,
-                COMMAND_NAME_RULE_REMOVE,
+                known_command_names()[0],
+                known_command_names()[1],
+                known_command_names()[2],
+                known_command_names()[3],
+                known_command_names()[4],
             ),
         )),
     }
@@ -285,10 +291,15 @@ fn option_required(
 
     let raw = value
         .as_str()
-        .map(str::trim)
         .map(ToString::to_string)
         .unwrap_or_else(|| value.to_string());
-    let normalized = raw.trim().trim_matches('"').to_string();
+    if raw.trim() != raw {
+        return Err(format!(
+            "options.{} must not include leading or trailing spaces",
+            option_name
+        ));
+    }
+    let normalized = raw.trim_matches('"').to_string();
     if normalized.is_empty() {
         return Err(format!("options.{} cannot be empty", option_name));
     }
@@ -303,4 +314,71 @@ fn option_required_decimal(
     let raw = option_required(request, option_name)?;
     Decimal::from_str(raw.as_str())
         .map_err(|_| format!("options.{} must be a valid decimal number", option_name))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn test_request(command: &str, options: serde_json::Value) -> CommandRequest {
+        CommandRequest {
+            command: command.to_string(),
+            context: crate::models::CommandContext {
+                discord_user_id: "123456789012345678".to_string(),
+                guild_id: None,
+                channel_id: None,
+            },
+            options: options.as_object().cloned(),
+        }
+    }
+
+    #[test]
+    fn option_required_rejects_surrounding_whitespace() {
+        let request = test_request(
+            COMMAND_NAME_RULE_SET,
+            json!({OPTION_NAME_TICKER: " INX-TEST-1 ", OPTION_NAME_THRESHOLD_DOLLARS: "0.61"}),
+        );
+
+        let err = option_required(&request, OPTION_NAME_TICKER).expect_err("ticker should fail");
+        assert_eq!(err, "options.ticker must not include leading or trailing spaces");
+    }
+
+    #[test]
+    fn option_required_decimal_rejects_surrounding_whitespace() {
+        let request = test_request(
+            COMMAND_NAME_RULE_SET,
+            json!({OPTION_NAME_TICKER: "INX-TEST-1", OPTION_NAME_THRESHOLD_DOLLARS: " 0.61 "}),
+        );
+
+        let err = option_required_decimal(&request, OPTION_NAME_THRESHOLD_DOLLARS)
+            .expect_err("threshold should fail");
+        assert_eq!(
+            err,
+            "options.threshold_dollars must not include leading or trailing spaces"
+        );
+    }
+
+    #[test]
+    fn known_command_names_rejects_legacy_command_name() {
+        assert!(!known_command_names().contains(&"kalshi-thresholds"));
+    }
+
+    #[test]
+    fn known_command_names_rejects_mixed_case_command_name() {
+        assert!(!known_command_names().contains(&"Kalshi-rules"));
+    }
+
+    #[test]
+    fn option_required_decimal_rejects_legacy_option_alias() {
+        let request = test_request(
+            COMMAND_NAME_RULE_SET,
+            json!({OPTION_NAME_TICKER: "INX-TEST-1", "yes_bid_dollars": 0.61}),
+        );
+
+        let err = option_required_decimal(&request, OPTION_NAME_THRESHOLD_DOLLARS)
+            .expect_err("legacy option alias should fail");
+        assert_eq!(err, "options.threshold_dollars is required");
+    }
 }
