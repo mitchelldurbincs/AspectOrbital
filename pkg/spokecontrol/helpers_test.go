@@ -15,11 +15,11 @@ func TestValidateDiscordUserRequiresDiscordUserID(t *testing.T) {
 	}
 }
 
-func TestNormalizeCommandTrimsAndLowercases(t *testing.T) {
+func TestNormalizeCommandPreservesExactValue(t *testing.T) {
 	req := Request{Command: "  Finance-Status  "}
 
-	if got := NormalizeCommand(req); got != "finance-status" {
-		t.Fatalf("unexpected normalized command: %q", got)
+	if got := NormalizeCommand(req); got != "  Finance-Status  " {
+		t.Fatalf("unexpected command value: %q", got)
 	}
 }
 

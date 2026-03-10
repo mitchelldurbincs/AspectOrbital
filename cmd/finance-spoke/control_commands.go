@@ -48,12 +48,16 @@ func (a *financeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := spokecontract.ValidateCommandRequestSchema(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := spokecontrol.ValidateDiscordUser(req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	commandName := spokecontrol.NormalizeCommand(req)
+	commandName := req.Command
 	switch commandName {
 	case commandNameStatus:
 		now := time.Now()

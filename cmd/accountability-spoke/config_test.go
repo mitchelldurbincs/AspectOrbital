@@ -24,6 +24,9 @@ func clearAccountabilityEnv(t *testing.T) {
 		"ACCOUNTABILITY_NOTIFY_CHANNEL",
 		"ACCOUNTABILITY_NOTIFY_SEVERITY",
 		"ACCOUNTABILITY_POLICY_FILE",
+		"ACCOUNTABILITY_OPENAI_BASE_URL",
+		"ACCOUNTABILITY_OPENAI_MODEL",
+		"ACCOUNTABILITY_OPENAI_TIMEOUT",
 		"ACCOUNTABILITY_DEFAULT_SNOOZE",
 		"ACCOUNTABILITY_MAX_SNOOZE",
 		"ACCOUNTABILITY_COMMAND_COMMIT",
@@ -58,6 +61,9 @@ func setAccountabilityRequiredEnv(t *testing.T) {
 	t.Setenv("ACCOUNTABILITY_NOTIFY_CHANNEL", "accountability")
 	t.Setenv("ACCOUNTABILITY_NOTIFY_SEVERITY", "warning")
 	t.Setenv("ACCOUNTABILITY_POLICY_FILE", "cmd/accountability-spoke/policies.example.json")
+	t.Setenv("ACCOUNTABILITY_OPENAI_BASE_URL", "https://api.openai.com/v1")
+	t.Setenv("ACCOUNTABILITY_OPENAI_MODEL", "gpt-4.1-mini")
+	t.Setenv("ACCOUNTABILITY_OPENAI_TIMEOUT", "20s")
 	t.Setenv("ACCOUNTABILITY_DEFAULT_SNOOZE", "10m")
 	t.Setenv("ACCOUNTABILITY_MAX_SNOOZE", "60m")
 	t.Setenv("ACCOUNTABILITY_COMMAND_COMMIT", "commit")
@@ -78,6 +84,22 @@ func TestLoadConfigRequiresHTTPAddr(t *testing.T) {
 		t.Fatal("expected error for missing ACCOUNTABILITY_SPOKE_HTTP_ADDR")
 	}
 	if !strings.Contains(err.Error(), "ACCOUNTABILITY_SPOKE_HTTP_ADDR is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigRequiresOpenAIBaseURL(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	if err := os.Unsetenv("ACCOUNTABILITY_OPENAI_BASE_URL"); err != nil {
+		t.Fatalf("failed to unset ACCOUNTABILITY_OPENAI_BASE_URL: %v", err)
+	}
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error for missing ACCOUNTABILITY_OPENAI_BASE_URL")
+	}
+	if !strings.Contains(err.Error(), "required key ACCOUNTABILITY_OPENAI_BASE_URL missing value") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

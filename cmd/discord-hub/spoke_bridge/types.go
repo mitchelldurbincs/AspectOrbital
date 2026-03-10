@@ -2,10 +2,11 @@ package spokebridge
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,13 +14,9 @@ import (
 )
 
 const (
-	defaultCommandsURL            = "http://127.0.0.1:8090/control/commands"
-	defaultCommandURL             = "http://127.0.0.1:8090/control/command"
-	defaultServiceName            = "default"
 	discoveryAttemptCount         = 8
 	discoveryAttemptDelay         = 2 * time.Second
 	CommandHTTPTimeout            = 8 * time.Second
-	defaultCommandDescription     = "Command owned by configured spoke service"
 	commandFailurePrefix          = "Command failed: "
 	discordResponseCharacterLimit = 1900
 )
@@ -60,9 +57,9 @@ type commandResponse struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-func NewBridge(logger *log.Logger, httpClient *http.Client, authToken, commandsURL, commandURL string, commands map[string]CommandSpec) *Bridge {
+func NewBridge(logger *log.Logger, httpClient *http.Client, authToken, commandsURL, commandURL string, commands map[string]CommandSpec) (*Bridge, error) {
 	service := ServiceDefinition{
-		Name:        defaultServiceName,
+		Name:        "default",
 		CommandsURL: commandsURL,
 		ExecuteURL:  commandURL,
 	}
@@ -70,15 +67,21 @@ func NewBridge(logger *log.Logger, httpClient *http.Client, authToken, commandsU
 	return NewBridgeWithServices(logger, httpClient, strings.TrimSpace(authToken), []ServiceDefinition{service}, commands, nil)
 }
 
-func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, authToken string, services []ServiceDefinition, commands map[string]CommandSpec, commandOwners map[string]string) *Bridge {
+func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, authToken string, services []ServiceDefinition, commands map[string]CommandSpec, commandOwners map[string]string) (*Bridge, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: CommandHTTPTimeout}
 	}
 
-	normalizedServices := normalizeServices(services)
+	normalizedServices, err := normalizeServices(services)
+	if err != nil {
+		return nil, err
+	}
 	serviceMap := make(map[string]ServiceDefinition, len(normalizedServices))
 	serviceOrder := make([]string, 0, len(normalizedServices))
 	for _, service := range normalizedServices {
+		if _, exists := serviceMap[service.Name]; exists {
+			return nil, fmt.Errorf("duplicate service name %q", service.Name)
+		}
 		serviceMap[service.Name] = service
 		serviceOrder = append(serviceOrder, service.Name)
 	}
@@ -86,14 +89,23 @@ func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, authToke
 	copyCommands := make(map[string]CommandSpec, len(commands))
 	owners := make(map[string]string, len(commands))
 	for key, value := range commands {
-		commandName := strings.ToLower(strings.TrimSpace(key))
+		commandName := strings.TrimSpace(key)
 		if commandName == "" {
-			continue
+			return nil, errors.New("command map contains an empty command name")
+		}
+		if commandName != value.Name {
+			return nil, fmt.Errorf("command map key %q must match command spec name %q", commandName, value.Name)
 		}
 		copyCommands[commandName] = value
 		if owner := strings.TrimSpace(commandOwners[commandName]); owner != "" {
+			if _, ok := serviceMap[owner]; !ok {
+				return nil, fmt.Errorf("command %q references unknown service %q", commandName, owner)
+			}
 			owners[commandName] = owner
 			continue
+		}
+		if len(normalizedServices) == 0 {
+			return nil, fmt.Errorf("command %q has no owning service", commandName)
 		}
 		owners[commandName] = normalizedServices[0].Name
 	}
@@ -106,35 +118,27 @@ func NewBridgeWithServices(logger *log.Logger, httpClient *http.Client, authToke
 		serviceOrder:  serviceOrder,
 		commandOwners: owners,
 		commands:      copyCommands,
-	}
+	}, nil
 }
 
-func normalizeServices(services []ServiceDefinition) []ServiceDefinition {
+func normalizeServices(services []ServiceDefinition) ([]ServiceDefinition, error) {
 	if len(services) == 0 {
-		return []ServiceDefinition{{
-			Name:        defaultServiceName,
-			CommandsURL: defaultCommandsURL,
-			ExecuteURL:  defaultCommandURL,
-		}}
+		return nil, errors.New("at least one service definition is required")
 	}
 
 	normalized := make([]ServiceDefinition, 0, len(services))
 	for idx, service := range services {
 		name := strings.TrimSpace(service.Name)
 		if name == "" {
-			if len(services) == 1 {
-				name = defaultServiceName
-			} else {
-				name = "service-" + strconv.Itoa(idx+1)
-			}
+			return nil, fmt.Errorf("services[%d].name is required", idx)
 		}
 		commandsURL := strings.TrimSpace(service.CommandsURL)
 		if commandsURL == "" {
-			commandsURL = defaultCommandsURL
+			return nil, fmt.Errorf("services[%d].commandsUrl is required", idx)
 		}
 		executeURL := strings.TrimSpace(service.ExecuteURL)
 		if executeURL == "" {
-			executeURL = defaultCommandURL
+			return nil, fmt.Errorf("services[%d].executeUrl is required", idx)
 		}
 
 		normalized = append(normalized, ServiceDefinition{
@@ -144,5 +148,5 @@ func normalizeServices(services []ServiceDefinition) []ServiceDefinition {
 		})
 	}
 
-	return normalized
+	return normalized, nil
 }

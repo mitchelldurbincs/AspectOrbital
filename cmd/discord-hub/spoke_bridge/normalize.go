@@ -4,39 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"personal-infrastructure/pkg/spokecontract"
 )
 
-func NormalizeCommandSpecs(input []CommandSpec) []CommandSpec {
-	seen := make(map[string]struct{}, len(input))
+func NormalizeCommandSpecs(input []CommandSpec) ([]CommandSpec, error) {
 	commands := make([]CommandSpec, 0, len(input))
-
-	for _, raw := range input {
-		commandName := spokecontract.NormalizeCommandName(raw.Name)
-		if commandName == "" || commandName == "ping" {
-			continue
+	for _, command := range input {
+		if command.Name == "ping" {
+			return nil, fmt.Errorf("command %q is reserved by discord-hub", command.Name)
 		}
-		if !slashCommandNameRegex.MatchString(commandName) {
-			continue
+		if err := validateOptionSpecs(command); err != nil {
+			return nil, err
 		}
-		if _, ok := seen[commandName]; ok {
-			continue
-		}
-
-		description := strings.TrimSpace(raw.Description)
-		if description == "" {
-			description = defaultCommandDescription
-		}
-
-		command := CommandSpec{
-			Name:        commandName,
-			Description: description,
-			Options:     normalizeOptionSpecs(raw.Options),
-		}
-
-		seen[commandName] = struct{}{}
 		commands = append(commands, command)
 	}
 
@@ -44,44 +24,19 @@ func NormalizeCommandSpecs(input []CommandSpec) []CommandSpec {
 		return commands[i].Name < commands[j].Name
 	})
 
-	return commands
+	return commands, nil
 }
 
-func normalizeOptionSpecs(input []CommandOptionSpec) []CommandOptionSpec {
-	seen := make(map[string]struct{}, len(input))
-	options := make([]CommandOptionSpec, 0, len(input))
-
-	for _, raw := range input {
-		name := spokecontract.NormalizeCommandName(raw.Name)
-		if name == "" {
-			continue
+func validateOptionSpecs(command CommandSpec) error {
+	for _, option := range command.Options {
+		if !slashCommandNameRegex.MatchString(option.Name) {
+			return fmt.Errorf("command %q option %q is invalid", command.Name, option.Name)
 		}
-		if !slashCommandNameRegex.MatchString(name) {
-			continue
+		if NormalizeOptionType(option.Type) == "" {
+			return fmt.Errorf("command %q option %q has unsupported type %q", command.Name, option.Name, option.Type)
 		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-
-		optionType := NormalizeOptionType(raw.Type)
-		if optionType == "" {
-			continue
-		}
-		description := strings.TrimSpace(raw.Description)
-		if description == "" {
-			description = "Optional value"
-		}
-
-		options = append(options, CommandOptionSpec{
-			Name:        name,
-			Type:        optionType,
-			Description: description,
-			Required:    raw.Required,
-		})
-		seen[name] = struct{}{}
 	}
-
-	return options
+	return nil
 }
 
 func NormalizeOptionType(raw string) string {
@@ -107,28 +62,28 @@ func (b *Bridge) OwnsCommand(name string) bool {
 		return false
 	}
 
-	_, ok := b.commands[strings.ToLower(strings.TrimSpace(name))]
+	_, ok := b.commands[name]
 	return ok
 }
 
-func PruneCommandOptions(input map[string]any) map[string]any {
+func PruneCommandOptions(input map[string]any) (map[string]any, error) {
 	if len(input) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	clean := make(map[string]any, len(input))
 	for key, raw := range input {
-		name := strings.ToLower(strings.TrimSpace(key))
+		name := key
 		if name == "" {
-			continue
+			return nil, fmt.Errorf("option name %q is invalid", key)
 		}
 		if !slashCommandNameRegex.MatchString(name) {
-			continue
+			return nil, fmt.Errorf("option name %q is invalid", key)
 		}
 
 		switch value := raw.(type) {
 		case string:
-			clean[name] = strings.TrimSpace(value)
+			clean[name] = value
 		case bool:
 			clean[name] = value
 		case map[string]any:
@@ -144,13 +99,13 @@ func PruneCommandOptions(input map[string]any) map[string]any {
 		case json.Number:
 			clean[name] = value
 		default:
-			clean[name] = fmt.Sprint(value)
+			return nil, fmt.Errorf("option %q has unsupported value type %T", name, raw)
 		}
 	}
 
 	if len(clean) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return clean
+	return clean, nil
 }

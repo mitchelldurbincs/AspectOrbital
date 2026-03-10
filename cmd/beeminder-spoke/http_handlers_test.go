@@ -41,20 +41,52 @@ func TestHandleCommandRejectsUnauthorizedRequest(t *testing.T) {
 	}
 }
 
-func TestHandleSnoozeSupportsLegacyMinutes(t *testing.T) {
+func TestHandleCommandRejectsCommandWithWhitespace(t *testing.T) {
 	app := newTestApp(testConfig())
-	req := httptest.NewRequest(http.MethodPost, "/control/snooze", strings.NewReader(`{"minutes":15}`))
+	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(`{"command":" status ","context":{"discordUserId":"u-123"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-command-token")
+	rec := httptest.NewRecorder()
+
+	app.handleCommand(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "must not include leading or trailing spaces") {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}
+
+func TestHandleSnoozeRequiresDuration(t *testing.T) {
+	app := newTestApp(testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/control/snooze", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	app.handleSnooze(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `"duration":"15m0s"`) {
-		t.Fatalf("expected converted duration in response, got %q", body)
+	if !strings.Contains(rec.Body.String(), "duration is required") {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}
+
+func TestHandleSnoozeRejectsDurationAboveMax(t *testing.T) {
+	app := newTestApp(testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/control/snooze", strings.NewReader(`{"duration":"3h"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	app.handleSnooze(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "snooze duration cannot exceed 2h0m0s") {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
 	}
 }
 

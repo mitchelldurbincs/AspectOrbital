@@ -40,51 +40,41 @@ func TestParseSpokeCommandCatalogRejectsLegacyPayload(t *testing.T) {
 	}
 }
 
-func TestNormalizeSpokeCommandSpecsFiltersDedupesAndSkipsPing(t *testing.T) {
+func TestParseSpokeCommandCatalogRejectsOptionTypeAliases(t *testing.T) {
+	_, err := spokebridge.ParseCommandCatalog([]byte(`{"version":1,"service":"beeminder-spoke","commands":[{"name":"status","description":"Show status","options":[{"name":"duration","type":"int","description":"Bad alias"}]}]}`))
+	if err == nil {
+		t.Fatal("expected error for aliased option type")
+	}
+	if !strings.Contains(err.Error(), `invalid option type "int"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeSpokeCommandSpecsRejectsReservedPing(t *testing.T) {
 	input := []spokebridge.CommandSpec{
-		{Name: "", Description: "empty"},
 		{Name: pingCommandName, Description: "reserved"},
-		{
-			Name:        " STATUS ",
-			Description: "",
-			Options: []spokebridge.CommandOptionSpec{
-				{Name: "Argument", Type: " string ", Description: "", Required: false},
-				{Name: "Argument", Type: "int", Description: "duplicate", Required: true},
-				{Name: "bad name", Type: "bool", Description: "invalid"},
-			},
-		},
-		{Name: "status", Description: "duplicate should be ignored"},
-		{Name: "bad name", Description: "invalid"},
-		{Name: "resume", Description: "Resume reminders"},
 	}
 
-	got := spokebridge.NormalizeCommandSpecs(input)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 normalized commands, got %d (%#v)", len(got), got)
+	_, err := spokebridge.NormalizeCommandSpecs(input)
+	if err == nil {
+		t.Fatal("expected reserved command error")
 	}
-	if got[0].Name != "resume" || got[1].Name != "status" {
-		t.Fatalf("expected sorted command names [resume status], got [%s %s]", got[0].Name, got[1].Name)
-	}
-	if got[1].Description != "Command owned by configured spoke service" {
-		t.Fatalf("unexpected fallback description: %q", got[1].Description)
-	}
-	if len(got[1].Options) != 1 {
-		t.Fatalf("expected one normalized option, got %#v", got[1].Options)
-	}
-	if got[1].Options[0].Type != "string" {
-		t.Fatalf("unexpected normalized option type: %q", got[1].Options[0].Type)
+	if !strings.Contains(err.Error(), `command "ping" is reserved`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestNormalizeSpokeOptionType(t *testing.T) {
 	tests := map[string]string{
-		"":           "string",
 		"string":     "string",
-		"int":        "integer",
 		"integer":    "integer",
-		"float64":    "number",
-		"bool":       "boolean",
+		"number":     "number",
+		"boolean":    "boolean",
 		"attachment": "attachment",
+		"int":        "",
+		"float64":    "",
+		"bool":       "",
+		"":           "",
 		"weirdtype":  "",
 	}
 
@@ -109,26 +99,26 @@ func TestDiscordOptionTypeMappings(t *testing.T) {
 		t.Fatalf("expected attachment mapping, got %v", got)
 	}
 	if got := spokebridge.DiscordOptionType("anything-else"); got != discordgo.ApplicationCommandOptionString {
-		t.Fatalf("expected fallback string mapping, got %v", got)
+		t.Fatalf("unexpected option mapping for unsupported type: %v", got)
 	}
 }
 
-func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
+func TestPruneCommandOptionsPreservesExactKeysAndValues(t *testing.T) {
 	input := map[string]any{
-		" Argument ": " 30m ",
-		"Flag":       true,
-		"Count":      int64(2),
-		"Number":     json.Number("3.5"),
-		"bad key":    "ignored",
-		"":           "ignored",
-		"list":       []int{1, 2},
-		"proof":      map[string]any{"id": "a1"},
+		"argument": " 30m ",
+		"flag":     true,
+		"count":    int64(2),
+		"number":   json.Number("3.5"),
+		"proof":    map[string]any{"id": "a1"},
 	}
 
-	got := spokebridge.PruneCommandOptions(input)
+	got, err := spokebridge.PruneCommandOptions(input)
+	if err != nil {
+		t.Fatalf("PruneCommandOptions returned error: %v", err)
+	}
 
-	if got["argument"] != "30m" {
-		t.Fatalf("expected trimmed argument option, got %#v", got["argument"])
+	if got["argument"] != " 30m " {
+		t.Fatalf("expected exact argument option, got %#v", got["argument"])
 	}
 	if got["flag"] != true {
 		t.Fatalf("expected bool option true, got %#v", got["flag"])
@@ -142,11 +132,23 @@ func TestPruneCommandOptionsNormalizesAndFilters(t *testing.T) {
 	if got["proof"].(map[string]any)["id"] != "a1" {
 		t.Fatalf("expected proof metadata map to pass through, got %#v", got["proof"])
 	}
-	if got["list"] != "[1 2]" {
-		t.Fatalf("expected fmt string conversion for list, got %#v", got["list"])
+}
+
+func TestPruneCommandOptionsRejectsInvalidKeysAndTypes(t *testing.T) {
+	_, err := spokebridge.PruneCommandOptions(map[string]any{"bad key": "ignored"})
+	if err == nil {
+		t.Fatal("expected invalid option key error")
 	}
-	if _, exists := got["bad key"]; exists {
-		t.Fatalf("expected invalid key to be removed, got %#v", got)
+	if !strings.Contains(err.Error(), `option name "bad key" is invalid`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_, err = spokebridge.PruneCommandOptions(map[string]any{"list": []int{1, 2}})
+	if err == nil {
+		t.Fatal("expected unsupported option value error")
+	}
+	if !strings.Contains(err.Error(), `option "list" has unsupported value type []int`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -172,7 +174,7 @@ func TestTruncateForDiscord(t *testing.T) {
 }
 
 func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
-	bridge := spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{
+	bridge, err := spokebridge.NewBridge(nil, nil, "", "http://127.0.0.1:8090/control/commands", "http://127.0.0.1:8090/control/command", map[string]spokebridge.CommandSpec{
 		"status": {
 			Name:        "status",
 			Description: "status desc",
@@ -182,6 +184,9 @@ func TestBuildDiscordCommandsUsesSortedCommandNames(t *testing.T) {
 			Description: "resume desc",
 		},
 	})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
 	got := bridge.BuildDiscordCommands()
 	if len(got) != 2 {

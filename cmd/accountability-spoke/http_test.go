@@ -41,7 +41,7 @@ func TestParseDeadlineClockTimeUsesSameDayWhenFuture(t *testing.T) {
 	}
 }
 
-func TestParseAttachmentSupportsContentTypeAliasesAndSize(t *testing.T) {
+func TestParseAttachmentSupportsContentTypeAndSize(t *testing.T) {
 	attachment := parseAttachment(map[string]any{
 		"id":           " a1 ",
 		"filename":     " proof.png ",
@@ -66,13 +66,23 @@ func TestParseAttachmentSupportsContentTypeAliasesAndSize(t *testing.T) {
 	}
 
 	attachment = parseAttachment(map[string]any{"contentType": "image/jpeg"})
-	if attachment.ContentType != "image/jpeg" {
-		t.Fatalf("expected camelCase contentType fallback, got: %q", attachment.ContentType)
+	if attachment.ContentType != "" {
+		t.Fatalf("expected camelCase contentType to be ignored, got: %q", attachment.ContentType)
 	}
 
 	attachment = parseAttachment("definitely not an attachment")
 	if attachment != (accountability.AttachmentMetadata{}) {
 		t.Fatalf("expected scalar attachment payload to be ignored, got %#v", attachment)
+	}
+}
+
+func TestParseSnoozeDurationRequiresExplicitDuration(t *testing.T) {
+	_, err := parseSnoozeDuration("")
+	if err == nil {
+		t.Fatal("expected missing duration to fail")
+	}
+	if !strings.Contains(err.Error(), "duration is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

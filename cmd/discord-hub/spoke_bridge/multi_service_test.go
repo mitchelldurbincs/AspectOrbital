@@ -24,7 +24,7 @@ func TestFetchAllCommandsWithRetryMergesCatalogs(t *testing.T) {
 	}))
 	defer bravo.Close()
 
-	bridge := NewBridgeWithServices(
+	bridge, err := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
 		"",
@@ -35,6 +35,9 @@ func TestFetchAllCommandsWithRetryMergesCatalogs(t *testing.T) {
 		nil,
 		nil,
 	)
+	if err != nil {
+		t.Fatalf("NewBridgeWithServices() error = %v", err)
+	}
 
 	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
 	if err != nil {
@@ -63,7 +66,7 @@ func TestFetchAllCommandsWithRetryRejectsDuplicateCommands(t *testing.T) {
 	}))
 	defer bravo.Close()
 
-	bridge := NewBridgeWithServices(
+	bridge, err := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
 		"",
@@ -74,8 +77,11 @@ func TestFetchAllCommandsWithRetryRejectsDuplicateCommands(t *testing.T) {
 		nil,
 		nil,
 	)
+	if err != nil {
+		t.Fatalf("NewBridgeWithServices() error = %v", err)
+	}
 
-	_, _, _, err := bridge.fetchAllCommandsWithRetry()
+	_, _, _, err = bridge.fetchAllCommandsWithRetry()
 	if err == nil {
 		t.Fatal("expected duplicate command error, got nil")
 	}
@@ -90,7 +96,7 @@ func TestFetchAllCommandsWithRetryContinuesWhenOneServiceUnavailable(t *testing.
 	}))
 	defer alpha.Close()
 
-	bridge := NewBridgeWithServices(
+	bridge, err := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
 		"",
@@ -101,6 +107,9 @@ func TestFetchAllCommandsWithRetryContinuesWhenOneServiceUnavailable(t *testing.
 		nil,
 		nil,
 	)
+	if err != nil {
+		t.Fatalf("NewBridgeWithServices() error = %v", err)
+	}
 
 	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
 	if err != nil {
@@ -122,7 +131,7 @@ func TestFetchAllCommandsWithRetryContinuesWhenOneServiceUnavailable(t *testing.
 }
 
 func TestFetchAllCommandsWithRetryReturnsErrorWhenNoServicesReachable(t *testing.T) {
-	bridge := NewBridgeWithServices(
+	bridge, err := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		http.DefaultClient,
 		"",
@@ -130,8 +139,11 @@ func TestFetchAllCommandsWithRetryReturnsErrorWhenNoServicesReachable(t *testing
 		nil,
 		nil,
 	)
+	if err != nil {
+		t.Fatalf("NewBridgeWithServices() error = %v", err)
+	}
 
-	_, _, _, err := bridge.fetchAllCommandsWithRetry()
+	_, _, _, err = bridge.fetchAllCommandsWithRetry()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -161,7 +173,7 @@ func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 	}))
 	defer bravo.Close()
 
-	bridge := NewBridgeWithServices(
+	bridge, err := NewBridgeWithServices(
 		log.New(io.Discard, "", 0),
 		alpha.Client(),
 		"",
@@ -172,6 +184,9 @@ func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 		map[string]CommandSpec{"sync": {Name: "sync"}},
 		map[string]string{"sync": "bravo"},
 	)
+	if err != nil {
+		t.Fatalf("NewBridgeWithServices() error = %v", err)
+	}
 
 	msg, err := bridge.ExecuteCommand(context.Background(), "sync", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err != nil {
@@ -185,5 +200,22 @@ func TestExecuteCommandRoutesToOwningService(t *testing.T) {
 	}
 	if !bravoCalled {
 		t.Fatal("bravo endpoint should be called")
+	}
+}
+
+func TestNewBridgeWithServicesRequiresServiceName(t *testing.T) {
+	_, err := NewBridgeWithServices(
+		log.New(io.Discard, "", 0),
+		http.DefaultClient,
+		"",
+		[]ServiceDefinition{{CommandsURL: "http://127.0.0.1:8090/control/commands", ExecuteURL: "http://127.0.0.1:8090/control/command"}},
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected missing service name to fail")
+	}
+	if !strings.Contains(err.Error(), "services[0].name is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

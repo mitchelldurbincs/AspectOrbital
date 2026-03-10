@@ -36,3 +36,20 @@ func TestHandleCommandRejectsMissingDiscordUserID(t *testing.T) {
 		t.Fatalf("unexpected response body: %q", rec.Body.String())
 	}
 }
+
+func TestHandleCommandRejectsCommandWithWhitespace(t *testing.T) {
+	app := &financeApp{cfg: config{SpokeCommandAuthToken: "test-command-token"}}
+	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(`{"command":" finance-status ","context":{"discordUserId":"u-1"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-command-token")
+	rec := httptest.NewRecorder()
+
+	app.handleCommand(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "must not include leading or trailing spaces") {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}

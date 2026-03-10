@@ -26,10 +26,10 @@ type config struct {
 	NotifyChannel         string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
 	NotifySeverity        string        `envconfig:"ACCOUNTABILITY_NOTIFY_SEVERITY" required:"true"`
 	PolicyFile            string        `envconfig:"ACCOUNTABILITY_POLICY_FILE" required:"true"`
-	OpenAIBaseURL         string        `envconfig:"ACCOUNTABILITY_OPENAI_BASE_URL" default:"https://api.openai.com/v1"`
+	OpenAIBaseURL         string        `envconfig:"ACCOUNTABILITY_OPENAI_BASE_URL" required:"true"`
 	OpenAIAPIKey          string        `envconfig:"ACCOUNTABILITY_OPENAI_API_KEY"`
-	OpenAIModel           string        `envconfig:"ACCOUNTABILITY_OPENAI_MODEL" default:"gpt-4.1-mini"`
-	OpenAITimeout         time.Duration `envconfig:"ACCOUNTABILITY_OPENAI_TIMEOUT" default:"20s"`
+	OpenAIModel           string        `envconfig:"ACCOUNTABILITY_OPENAI_MODEL" required:"true"`
+	OpenAITimeout         time.Duration `envconfig:"ACCOUNTABILITY_OPENAI_TIMEOUT" required:"true"`
 	DefaultSnooze         time.Duration `envconfig:"ACCOUNTABILITY_DEFAULT_SNOOZE" required:"true"`
 	MaxSnooze             time.Duration `envconfig:"ACCOUNTABILITY_MAX_SNOOZE" required:"true"`
 

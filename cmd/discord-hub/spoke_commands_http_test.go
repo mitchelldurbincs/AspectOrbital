@@ -14,7 +14,7 @@ import (
 	"personal-infrastructure/pkg/spokecontract"
 )
 
-func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
+func TestFetchCommandsRejectsReservedPingCommand(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("unexpected method: %s", r.Method)
@@ -25,18 +25,17 @@ func TestFetchCommandsReturnsNormalizedCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
-
-	commands, err := bridge.FetchCommands(context.Background())
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
 	if err != nil {
-		t.Fatalf("fetchCommands returned error: %v", err)
+		t.Fatalf("NewBridge returned error: %v", err)
 	}
 
-	if len(commands) != 1 || commands[0].Name != "status" {
-		t.Fatalf("unexpected normalized commands: %#v", commands)
+	_, err = bridge.FetchCommands(context.Background())
+	if err == nil {
+		t.Fatal("expected reserved command error")
 	}
-	if commands[0].Description != "Status command" {
-		t.Fatalf("unexpected description: %q", commands[0].Description)
+	if !strings.Contains(err.Error(), `command "ping" is reserved`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -46,9 +45,12 @@ func TestFetchCommandsReturnsErrorForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
-	_, err := bridge.FetchCommands(context.Background())
+	_, err = bridge.FetchCommands(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -76,12 +78,14 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "test-command-token", server.URL, server.URL, nil)
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "test-command-token", server.URL, server.URL, map[string]spokebridge.CommandSpec{"status": {Name: "status", Description: "status"}})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
 	message, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, map[string]any{
 		"duration": " 30m ",
-		"Flag":     true,
-		"bad key":  "ignored",
+		"flag":     true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteCommand returned error: %v", err)
@@ -96,14 +100,26 @@ func TestExecuteCommandPostsRequestAndReturnsMessage(t *testing.T) {
 	if captured.Context.DiscordUserID != "u-1" {
 		t.Fatalf("expected forwarded context user id, got %#v", captured.Context)
 	}
-	if captured.Options["duration"] != "30m" {
-		t.Fatalf("expected duration option 30m, got %#v", captured.Options["duration"])
+	if captured.Options["duration"] != " 30m " {
+		t.Fatalf("expected exact duration option, got %#v", captured.Options["duration"])
 	}
 	if captured.Options["flag"] != true {
 		t.Fatalf("expected flag option true, got %#v", captured.Options["flag"])
 	}
-	if _, exists := captured.Options["bad key"]; exists {
-		t.Fatalf("did not expect invalid option key in request: %#v", captured.Options)
+}
+
+func TestExecuteCommandRejectsInvalidOptionKey(t *testing.T) {
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), http.DefaultClient, "", "http://127.0.0.1:8090/control/commands", "http://127.0.0.1:8090/control/command", map[string]spokebridge.CommandSpec{"status": {Name: "status", Description: "status"}})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
+
+	_, err = bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, map[string]any{"bad key": "ignored"})
+	if err == nil {
+		t.Fatal("expected invalid option key error")
+	}
+	if !strings.Contains(err.Error(), `option name "bad key" is invalid`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -114,9 +130,12 @@ func TestExecuteCommandRejectsMissingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{"status": {Name: "status", Description: "status"}})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
-	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
+	_, err = bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {
 		t.Fatal("expected error for missing response message")
 	}
@@ -128,9 +147,12 @@ func TestExecuteCommandReturnsErrorMessageForNon2xxResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, nil)
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{"status": {Name: "status", Description: "status"}})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
-	_, err := bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
+	_, err = bridge.ExecuteCommand(context.Background(), "status", spokecontract.CommandContext{DiscordUserID: "u-1"}, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

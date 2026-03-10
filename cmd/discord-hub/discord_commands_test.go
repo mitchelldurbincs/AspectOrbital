@@ -138,12 +138,15 @@ func TestUpsertSpokeCommandsReusesListedCommands(t *testing.T) {
 		existing: []*discordgo.ApplicationCommand{{ID: "status-1", Name: "status", Description: "old"}},
 	}
 
-	bridge := spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{
+	bridge, err := spokebridge.NewBridge(nil, nil, "", "http://127.0.0.1:8090/control/commands", "http://127.0.0.1:8090/control/command", map[string]spokebridge.CommandSpec{
 		"status": {Name: "status", Description: "new status"},
 		"resume": {Name: "resume", Description: "resume"},
 	})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 
-	err := upsertSpokeCommands(client, "app", "guild", bridge)
+	err = upsertSpokeCommands(client, "app", "guild", bridge)
 	if err != nil {
 		t.Fatalf("upsertSpokeCommands returned error: %v", err)
 	}
@@ -162,7 +165,11 @@ func TestUpsertSpokeCommandsReusesListedCommands(t *testing.T) {
 func TestUpsertSpokeCommandsReturnsListError(t *testing.T) {
 	client := &fakeCommandRegistrar{listErr: errors.New("listing failed")}
 
-	err := upsertSpokeCommands(client, "app", "guild", spokebridge.NewBridge(nil, nil, "", "", "", map[string]spokebridge.CommandSpec{"status": {Name: "status"}}))
+	bridge, err := spokebridge.NewBridge(nil, nil, "", "http://127.0.0.1:8090/control/commands", "http://127.0.0.1:8090/control/command", map[string]spokebridge.CommandSpec{"status": {Name: "status"}})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
+	err = upsertSpokeCommands(client, "app", "guild", bridge)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

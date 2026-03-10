@@ -81,23 +81,21 @@ func componentInteraction(customID string, message *discordgo.Message) *discordg
 	}
 }
 
-func TestInteractionOptionValuesNormalizesNamesAndValues(t *testing.T) {
+func TestInteractionOptionValuesPreservesExactNamesAndValues(t *testing.T) {
 	options := []*discordgo.ApplicationCommandInteractionDataOption{
-		{Name: " Arg ", Value: "  hello "},
-		{Name: "Flag", Value: true},
-		{Name: "Count", Value: 7},
-		{Name: "Ratio", Value: 1.25},
-		{Name: "Misc", Value: []int{1, 2}},
+		{Name: "arg", Value: "  hello "},
+		{Name: "flag", Value: true},
+		{Name: "count", Value: 7},
+		{Name: "ratio", Value: 1.25},
 		{Name: "   ", Value: "ignored"},
 	}
 
 	got := interactionOptionValues(options)
 	want := map[string]any{
-		"arg":   "hello",
+		"arg":   "  hello ",
 		"flag":  true,
 		"count": 7,
 		"ratio": 1.25,
-		"misc":  "[1 2]",
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -163,9 +161,12 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 	runtime := newBridgeRuntime()
 	runtime.storeSyncResult(bridge, nil)
 
@@ -234,9 +235,12 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
+	bridge, err := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
+	if err != nil {
+		t.Fatalf("NewBridge returned error: %v", err)
+	}
 	runtime := newBridgeRuntime()
 	runtime.storeSyncResult(bridge, nil)
 

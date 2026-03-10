@@ -39,7 +39,7 @@ func IsAuthorized(r *http.Request, expectedToken string) bool {
 }
 
 func NormalizeCommand(req Request) string {
-	return spokecontract.NormalizeCommandName(req.Command)
+	return req.Command
 }
 
 func OK(command string, message string, data any) map[string]any {

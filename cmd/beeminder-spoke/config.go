@@ -20,8 +20,7 @@ type config struct {
 	BeeminderAuthToken string `envconfig:"BEEMINDER_AUTH_TOKEN"` // Validated manually to match old logic
 	BeeminderUsername  string `envconfig:"BEEMINDER_USERNAME"`
 
-	BeeminderGoalSlugsRaw string   `envconfig:"BEEMINDER_GOAL_SLUGS"`
-	BeeminderGoalSlugRaw  string   `envconfig:"BEEMINDER_GOAL_SLUG"`
+	BeeminderGoalSlugsRaw string   `envconfig:"BEEMINDER_GOAL_SLUGS" required:"true"`
 	BeeminderGoalSlugs    []string `ignored:"true"`
 
 	HubNotifyURL          string `envconfig:"HUB_NOTIFY_URL" required:"true"`
@@ -50,8 +49,8 @@ type config struct {
 	ActiveGrace      time.Duration `envconfig:"BEEMINDER_ACTIVE_GRACE" required:"true"`
 	StartedSnooze    time.Duration `envconfig:"BEEMINDER_STARTED_SNOOZE" required:"true"`
 	DefaultSnooze    time.Duration `envconfig:"BEEMINDER_DEFAULT_SNOOZE" required:"true"`
-	MaxSnooze        time.Duration `envconfig:"BEEMINDER_MAX_SNOOZE" default:"2h"`
-	RequireDailyRate bool          `envconfig:"BEEMINDER_REQUIRE_DAILY_RATE" default:"true"`
+	MaxSnooze        time.Duration `envconfig:"BEEMINDER_MAX_SNOOZE" required:"true"`
+	RequireDailyRate bool          `envconfig:"BEEMINDER_REQUIRE_DAILY_RATE" required:"true"`
 
 	HTTPTimeout       time.Duration `envconfig:"BEEMINDER_HTTP_TIMEOUT" required:"true"`
 	DatapointsPerPage int           `envconfig:"BEEMINDER_DATAPOINTS_PER_PAGE" required:"true"`
@@ -107,12 +106,8 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
-	goalSlugsValue := cfg.BeeminderGoalSlugsRaw
-	if goalSlugsValue == "" {
-		goalSlugsValue = cfg.BeeminderGoalSlugRaw
-	}
 	var err error
-	cfg.BeeminderGoalSlugs, err = parseGoalSlugs(goalSlugsValue)
+	cfg.BeeminderGoalSlugs, err = parseGoalSlugs(cfg.BeeminderGoalSlugsRaw)
 	if err != nil {
 		return config{}, fmt.Errorf("invalid BEEMINDER_GOAL_SLUGS: %w", err)
 	}

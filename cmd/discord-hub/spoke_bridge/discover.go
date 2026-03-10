@@ -31,7 +31,11 @@ func DiscoverWithStatus(logger *log.Logger) (*Bridge, error) {
 		return nil, err
 	}
 
-	bridge := NewBridgeWithServices(logger, &http.Client{Timeout: CommandHTTPTimeout}, strings.TrimSpace(os.Getenv("SPOKE_COMMAND_AUTH_TOKEN")), services, nil, nil)
+	bridge, err := NewBridgeWithServices(logger, &http.Client{Timeout: CommandHTTPTimeout}, strings.TrimSpace(os.Getenv("SPOKE_COMMAND_AUTH_TOKEN")), services, nil, nil)
+	if err != nil {
+		logger.Printf("spoke command bridge unavailable: %v", err)
+		return nil, err
+	}
 
 	commands, owners, counts, err := bridge.fetchAllCommandsWithRetry()
 	if err != nil {
@@ -67,6 +71,9 @@ func configuredServices() ([]ServiceDefinition, error) {
 		return nil, errors.New("SPOKE_COMMAND_SERVICES cannot be empty")
 	}
 	for i, service := range services {
+		if strings.TrimSpace(service.Name) == "" {
+			return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].name is required", i)
+		}
 		if strings.TrimSpace(service.CommandsURL) == "" {
 			return nil, fmt.Errorf("SPOKE_COMMAND_SERVICES[%d].commandsUrl is required", i)
 		}
@@ -167,7 +174,10 @@ func (b *Bridge) fetchCommandsForService(ctx context.Context, service ServiceDef
 		return nil, err
 	}
 
-	normalized := NormalizeCommandSpecs(commands)
+	normalized, err := NormalizeCommandSpecs(commands)
+	if err != nil {
+		return nil, err
+	}
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("command catalog returned no usable commands for service %q", service.Name)
 	}

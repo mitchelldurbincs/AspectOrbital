@@ -352,14 +352,14 @@ func interactionOptionValues(options []*discordgo.ApplicationCommandInteractionD
 			continue
 		}
 
-		name := strings.ToLower(strings.TrimSpace(option.Name))
-		if name == "" {
+		name := option.Name
+		if strings.TrimSpace(name) == "" {
 			continue
 		}
 
 		switch value := option.Value.(type) {
 		case string:
-			values[name] = strings.TrimSpace(value)
+			values[name] = value
 		case bool:
 			values[name] = value
 		case int:
@@ -371,16 +371,12 @@ func interactionOptionValues(options []*discordgo.ApplicationCommandInteractionD
 		case *discordgo.MessageAttachment:
 			if value != nil {
 				values[name] = map[string]any{
-					"id":           strings.TrimSpace(value.ID),
-					"filename":     strings.TrimSpace(value.Filename),
-					"url":          strings.TrimSpace(value.URL),
-					"content_type": strings.TrimSpace(value.ContentType),
+					"id":           value.ID,
+					"filename":     value.Filename,
+					"url":          value.URL,
+					"content_type": value.ContentType,
 					"size":         value.Size,
 				}
-			}
-		default:
-			if option.Value != nil {
-				values[name] = fmt.Sprint(option.Value)
 			}
 		}
 	}

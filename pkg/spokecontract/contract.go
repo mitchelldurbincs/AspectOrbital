@@ -55,20 +55,30 @@ func NormalizeCommandName(value string) string {
 }
 
 func NormalizeOptionType(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "string":
+	switch strings.TrimSpace(raw) {
+	case "string":
 		return "string"
-	case "integer", "int":
+	case "integer":
 		return "integer"
-	case "number", "float", "float64", "double":
+	case "number":
 		return "number"
-	case "boolean", "bool":
+	case "boolean":
 		return "boolean"
-	case "attachment", "file":
+	case "attachment":
 		return "attachment"
 	default:
 		return ""
 	}
+}
+
+func ValidateOptionType(value string) error {
+	if NormalizeOptionType(value) == "" {
+		return errors.New("must be one of string, integer, number, boolean, attachment")
+	}
+	if strings.TrimSpace(value) != value {
+		return errors.New("must not include leading or trailing spaces")
+	}
+	return nil
 }
 
 func ValidateCommandName(value string) error {
@@ -94,7 +104,7 @@ func ValidateCatalog(catalog CommandCatalog) error {
 
 	seen := make(map[string]struct{}, len(catalog.Commands))
 	for _, command := range catalog.Commands {
-		name := NormalizeCommandName(command.Name)
+		name := command.Name
 		if _, ok := seen[name]; ok {
 			return fmt.Errorf("duplicate command name %q", name)
 		}
@@ -102,7 +112,7 @@ func ValidateCatalog(catalog CommandCatalog) error {
 
 		optionSeen := make(map[string]struct{}, len(command.Options))
 		for _, option := range command.Options {
-			oname := NormalizeCommandName(option.Name)
+			oname := option.Name
 			if _, ok := optionSeen[oname]; ok {
 				return fmt.Errorf("duplicate option name %q for command %q", oname, name)
 			}

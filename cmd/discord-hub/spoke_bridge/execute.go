@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"personal-infrastructure/pkg/spokecontract"
 )
@@ -18,14 +17,9 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 		return "", errors.New("spoke command bridge is disabled")
 	}
 
-	name := strings.ToLower(strings.TrimSpace(commandName))
-	serviceName, ok := b.commandOwners[name]
+	serviceName, ok := b.commandOwners[commandName]
 	if !ok {
-		if len(b.serviceOrder) == 1 {
-			serviceName = b.serviceOrder[0]
-		} else {
-			return "", fmt.Errorf("unknown command %q", commandName)
-		}
+		return "", fmt.Errorf("unknown command %q", commandName)
 	}
 	service, ok := b.services[serviceName]
 	if !ok {
@@ -33,8 +27,12 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 	}
 
 	request := commandRequest{Command: commandName, Context: commandContext}
+	var err error
 	if len(options) > 0 {
-		request.Options = PruneCommandOptions(options)
+		request.Options, err = PruneCommandOptions(options)
+		if err != nil {
+			return "", fmt.Errorf("invalid spoke command request: %w", err)
+		}
 	}
 	if err := spokecontract.ValidateCommandRequestSchema(spokecontract.CommandRequest(request)); err != nil {
 		return "", fmt.Errorf("invalid spoke command request: %w", err)
@@ -66,7 +64,7 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		message := strings.TrimSpace(string(body))
+		message := string(bytes.TrimSpace(body))
 		if message == "" {
 			message = resp.Status
 		}
@@ -81,12 +79,7 @@ func (b *Bridge) ExecuteCommand(ctx context.Context, commandName string, command
 		return "", fmt.Errorf("invalid spoke command response: %w", err)
 	}
 
-	message := strings.TrimSpace(response.Message)
-	if message == "" {
-		message = fmt.Sprintf("Command `%s` acknowledged.", commandName)
-	}
-
-	return TruncateForDiscord(message), nil
+	return TruncateForDiscord(response.Message), nil
 }
 
 func FormatCommandFailure(err error) string {

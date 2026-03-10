@@ -2,8 +2,10 @@ package main
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
+	"personal-infrastructure/pkg/spokecontract"
 	"personal-infrastructure/pkg/spokecontrol"
 )
 
@@ -49,6 +51,10 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := spokecontract.ValidateCommandRequestSchema(spokecontract.CommandRequest(payload)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := spokecontrol.ValidateDiscordUser(spokecontrol.Request(payload)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -90,9 +96,10 @@ func (a *spokeApp) handleSnooze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	argument := payload.Duration
-	if argument == "" && payload.Minutes > 0 {
-		argument = (time.Duration(payload.Minutes) * time.Minute).String()
+	argument := strings.TrimSpace(payload.Duration)
+	if argument == "" {
+		http.Error(w, "duration is required", http.StatusBadRequest)
+		return
 	}
 
 	result, statusCode, err := a.executeCommand(time.Now().UTC(), commandRequest{
@@ -124,5 +131,4 @@ func (a *spokeApp) handleResume(w http.ResponseWriter, r *http.Request) {
 
 type snoozeRequest struct {
 	Duration string `json:"duration"`
-	Minutes  int    `json:"minutes"`
 }

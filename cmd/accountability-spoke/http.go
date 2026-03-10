@@ -59,13 +59,17 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := spokecontract.ValidateCommandRequestSchema(spokecontract.CommandRequest(req)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	userID := strings.TrimSpace(req.Context.DiscordUserID)
 	if err := spokecontrol.ValidateDiscordUser(req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	cmd := spokecontrol.NormalizeCommand(req)
+	cmd := req.Command
 	now := time.Now()
 	switch cmd {
 	case a.cfg.CommitCommandName:
@@ -150,7 +154,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.SnoozeCommandName:
-		duration, err := parseSnoozeDuration(mapOptionString(req.Options, "duration"), a.cfg.DefaultSnooze)
+		duration, err := parseSnoozeDuration(mapOptionString(req.Options, "duration"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -206,9 +210,6 @@ func parseDeadline(now time.Time, raw string) (time.Time, error) {
 func parseAttachment(raw any) accountability.AttachmentMetadata {
 	if m, ok := raw.(map[string]any); ok {
 		contentType := mapOptionString(m, "content_type")
-		if contentType == "" {
-			contentType = mapOptionString(m, "contentType")
-		}
 		size := 0
 		if rawSize, ok := m["size"]; ok {
 			if parsedSize, err := intFromAny(rawSize); err == nil && parsedSize >= 0 {
@@ -223,10 +224,10 @@ func parseAttachment(raw any) accountability.AttachmentMetadata {
 	return accountability.AttachmentMetadata{}
 }
 
-func parseSnoozeDuration(raw string, defaultDuration time.Duration) (time.Duration, error) {
+func parseSnoozeDuration(raw string) (time.Duration, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return defaultDuration, nil
+		return 0, errors.New("duration is required")
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {

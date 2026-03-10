@@ -27,7 +27,7 @@ func loadHubConfig() (hubConfig, error) {
 	}
 
 	if !strings.HasPrefix(cfg.DiscordToken, "Bot ") {
-		cfg.DiscordToken = "Bot " + cfg.DiscordToken
+		return hubConfig{}, errors.New("DISCORD_BOT_TOKEN must start with \"Bot \"")
 	}
 
 	if cfg.SpokeCommandsEnabled {
@@ -36,7 +36,11 @@ func loadHubConfig() (hubConfig, error) {
 		}
 	}
 
-	cfg.ChannelMap = buildChannelMap()
+	channelMap, err := buildChannelMap()
+	if err != nil {
+		return hubConfig{}, err
+	}
+	cfg.ChannelMap = channelMap
 
 	return cfg, nil
 }

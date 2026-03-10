@@ -15,7 +15,7 @@ func TestValidateCatalogRejectsDuplicateCommandNames(t *testing.T) {
 				Description: "Show status",
 			},
 			{
-				Name:        " STATUS ",
+				Name:        "status",
 				Description: "Show status again",
 			},
 		},
@@ -44,7 +44,7 @@ func TestValidateCatalogRejectsDuplicateOptionNames(t *testing.T) {
 					Description: "Snooze duration",
 				},
 				{
-					Name:        " DURATION ",
+					Name:        "duration",
 					Type:        "string",
 					Description: "Another duration",
 				},
@@ -58,6 +58,42 @@ func TestValidateCatalogRejectsDuplicateOptionNames(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "duplicate option name \"duration\" for command \"status\"") {
 		t.Fatalf("expected duplicate option name error, got %v", err)
+	}
+}
+
+func TestValidateCatalogRejectsCommandNamesWithWhitespace(t *testing.T) {
+	catalog := CommandCatalog{
+		Version:  CatalogVersion,
+		Service:  "beeminder-spoke",
+		Commands: []CommandSpec{{Name: " status ", Description: "Show status"}},
+	}
+
+	err := ValidateCatalog(catalog)
+	if err == nil {
+		t.Fatal("expected whitespace validation error")
+	}
+	if !strings.Contains(err.Error(), "must not include leading or trailing spaces") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateCatalogRejectsOptionTypeAliases(t *testing.T) {
+	catalog := CommandCatalog{
+		Version: CatalogVersion,
+		Service: "beeminder-spoke",
+		Commands: []CommandSpec{{
+			Name:        "status",
+			Description: "Show status",
+			Options:     []CommandOptionSpec{{Name: "duration", Type: "int", Description: "Bad alias"}},
+		}},
+	}
+
+	err := ValidateCatalog(catalog)
+	if err == nil {
+		t.Fatal("expected option type validation error")
+	}
+	if !strings.Contains(err.Error(), "invalid option type \"int\"") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

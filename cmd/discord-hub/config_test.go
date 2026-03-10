@@ -57,7 +57,7 @@ func TestLoadHubConfigRequiresDiscordBotToken(t *testing.T) {
 	}
 }
 
-func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
+func TestLoadHubConfigRejectsTokenWithoutBotPrefix(t *testing.T) {
 	clearHubEnv(t)
 	setHubRequiredEnv(t)
 	t.Setenv("DISCORD_BOT_TOKEN", "abc123")
@@ -65,13 +65,12 @@ func TestLoadHubConfigAddsBotPrefixWhenMissing(t *testing.T) {
 	t.Setenv("SPOKE_COMMANDS_ENABLED", "true")
 	t.Setenv("SPOKE_COMMAND_SERVICES", `[{"name":"beeminder-spoke","commandsUrl":"http://127.0.0.1:8090/control/commands","executeUrl":"http://127.0.0.1:8090/control/command"}]`)
 
-	cfg, err := loadHubConfig()
-	if err != nil {
-		t.Fatalf("loadHubConfig returned error: %v", err)
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected error for token without Bot prefix")
 	}
-
-	if cfg.DiscordToken != "Bot abc123" {
-		t.Fatalf("unexpected token: %q", cfg.DiscordToken)
+	if !strings.Contains(err.Error(), `DISCORD_BOT_TOKEN must start with "Bot "`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -125,9 +124,12 @@ func TestLoadHubConfigRequiresCallbackAuthTokenWhenUnset(t *testing.T) {
 
 func TestBuildChannelMapParsesDynamicMappings(t *testing.T) {
 	clearHubEnv(t)
-	t.Setenv("DISCORD_CHANNEL_MAP", " custom-one : 222 , malformed ,custom-two:333, mandarin-streaks:444, :oops, nope:, kalshi-alerts:555 ")
+	t.Setenv("DISCORD_CHANNEL_MAP", " custom-one : 222 ,custom-two:333, mandarin-streaks:444, kalshi-alerts:555 ")
 
-	got := buildChannelMap()
+	got, err := buildChannelMap()
+	if err != nil {
+		t.Fatalf("buildChannelMap returned error: %v", err)
+	}
 	want := map[string]string{
 		"kalshi-alerts":    "555",
 		"mandarin-streaks": "444",
@@ -140,15 +142,30 @@ func TestBuildChannelMapParsesDynamicMappings(t *testing.T) {
 	}
 }
 
-func TestBuildChannelMapIgnoresMalformedPairsAndEmptyValues(t *testing.T) {
+func TestBuildChannelMapRejectsMalformedPairsAndEmptyValues(t *testing.T) {
 	clearHubEnv(t)
 	t.Setenv("DISCORD_CHANNEL_MAP", "badpair, :123, empty:, ok:456")
 
-	got := buildChannelMap()
-	want := map[string]string{"ok": "456"}
+	_, err := buildChannelMap()
+	if err == nil {
+		t.Fatal("expected malformed channel map to fail")
+	}
+	if !strings.Contains(err.Error(), "DISCORD_CHANNEL_MAP entry 1 must use name:id format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected channel map\nwant: %#v\ngot:  %#v", want, got)
+func TestLoadHubConfigRejectsMalformedChannelMap(t *testing.T) {
+	clearHubEnv(t)
+	setHubRequiredEnv(t)
+	t.Setenv("DISCORD_CHANNEL_MAP", "alerts")
+
+	_, err := loadHubConfig()
+	if err == nil {
+		t.Fatal("expected malformed DISCORD_CHANNEL_MAP to fail")
+	}
+	if !strings.Contains(err.Error(), "DISCORD_CHANNEL_MAP entry 1 must use name:id format") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
