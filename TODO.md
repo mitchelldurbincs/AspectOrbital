@@ -1,0 +1,1 @@
+- [ ] probably need to separate out the discord callback logic - there is probably a ton of duplicate code across spokes 
