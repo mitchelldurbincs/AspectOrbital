@@ -45,25 +45,14 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !spokecontrol.IsAuthorized(r, a.cfg.SpokeCommandAuthToken) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	var req commandRequest
-	if err := decodeJSONBody(r, &req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if preflight := spokecontrol.PreflightCommand(r, a.cfg.SpokeCommandAuthToken, &req, func() spokecontrol.Request {
+		return req
+	}); preflight.Failed() {
+		http.Error(w, preflight.Err.Error(), preflight.StatusCode)
 		return
 	}
 	userID := strings.TrimSpace(req.Context.DiscordUserID)
-	if err := spokecontrol.ValidateDiscordUser(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	cmd := spokecontrol.NormalizeCommand(req)
 	now := time.Now()
