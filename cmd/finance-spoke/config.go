@@ -15,8 +15,8 @@ import (
 type config struct {
 	HTTPAddr string `envconfig:"FINANCE_SPOKE_HTTP_ADDR" required:"true"`
 
-	HubNotifyURL        string `envconfig:"FINANCE_HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken  string `envconfig:"FINANCE_HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	HubNotifyURL        string `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken  string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
 	NotifyTargetChannel string `envconfig:"FINANCE_NOTIFY_CHANNEL" required:"true"`
 	NotifySeverity      string `envconfig:"FINANCE_NOTIFY_SEVERITY" required:"true"`
 

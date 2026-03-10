@@ -24,8 +24,8 @@ type config struct {
 	BeeminderGoalSlugRaw  string   `envconfig:"BEEMINDER_GOAL_SLUG"`
 	BeeminderGoalSlugs    []string `ignored:"true"`
 
-	HubNotifyURL        string `envconfig:"DISCORD_HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken  string `envconfig:"DISCORD_HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	HubNotifyURL        string `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken  string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
 	NotifyTargetChannel string `envconfig:"BEEMINDER_NOTIFY_CHANNEL" required:"true"`
 	NotifySeverity      string `envconfig:"BEEMINDER_NOTIFY_SEVERITY" required:"true"`
 

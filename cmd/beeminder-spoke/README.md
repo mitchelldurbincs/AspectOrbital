@@ -27,13 +27,13 @@
 - `BEEMINDER_AUTH_TOKEN`
 - `BEEMINDER_USERNAME`
 - `BEEMINDER_GOAL_SLUGS` (comma-separated)
-- `DISCORD_HUB_NOTIFY_URL`
-- `DISCORD_HUB_NOTIFY_AUTH_TOKEN`
+- `HUB_NOTIFY_URL`
+- `HUB_NOTIFY_AUTH_TOKEN`
 - `BEEMINDER_NOTIFY_CHANNEL`
 
-Copy `cmd/beeminder-spoke/.env.example` to `cmd/beeminder-spoke/.env` and fill values.
+Configure these in the repository root `.env`.
 
-`beeminder-spoke` loads env files in this order: `cmd/beeminder-spoke/.env`, then `.env` (legacy fallback).
+`beeminder-spoke` reads configuration from the repository root `.env`.
 
 ## Run locally
 

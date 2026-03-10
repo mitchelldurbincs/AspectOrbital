@@ -33,18 +33,18 @@
 - `PLAID_ACCESS_TOKENS` (comma-separated Item access tokens)
 - `PLAID_WEBHOOK_URL`
 - `FINANCE_NOTIFY_CHANNEL`
-- `FINANCE_HUB_NOTIFY_URL`
-- `FINANCE_HUB_NOTIFY_AUTH_TOKEN`
+- `HUB_NOTIFY_URL`
+- `HUB_NOTIFY_AUTH_TOKEN`
 
 ## Local run
 
-Copy `cmd/finance-spoke/.env.example` to `cmd/finance-spoke/.env` and fill values.
+Configure values in the repository root `.env`.
 
 ```bash
 go run ./cmd/finance-spoke
 ```
 
-`finance-spoke` loads env files in this order: `cmd/finance-spoke/.env`, then `.env` (legacy fallback).
+`finance-spoke` reads configuration from the repository root `.env`.
 
 ## Local API
 
@@ -81,7 +81,7 @@ curl -X POST http://127.0.0.1:8091/plaid/exchange-public-token \
 
 Current setup flow for real accounts:
 
-1. Copy `cmd/finance-spoke/.env.example` to `cmd/finance-spoke/.env`.
+1. Copy `.env.example` to `.env` at the repository root.
 2. Fill all required Plaid values, including `PLAID_ACCESS_TOKENS` and `PLAID_WEBHOOK_URL`.
 3. Start `finance-spoke`.
 4. Optionally open `http://127.0.0.1:8091/plaid/setup` to create additional Plaid Link sessions or exchange a new public token.

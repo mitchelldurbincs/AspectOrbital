@@ -50,7 +50,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 - Docker Compose orchestration for local and deployment use
 - Shared Go packages (`pkg/`) for logging, lifecycle management, hub notifications, and config utilities
 - Strict environment variable validation across all spokes (no silent fallback defaults)
-- Per-service `.env` files with root-level fallback
+- Single root `.env` configuration shared by local runs and Docker Compose
 
 ### In progress / not yet complete
 
@@ -71,7 +71,7 @@ cd deployments
 docker compose up --build
 ```
 
-Per-service `.env` files can also be placed in each `cmd/*/` directory for local development. The root `.env.example` is a legacy combined file used by `deployments/docker-compose.yml`; prefer each service's local `.env.example` for the most current per-service setup guidance.
+All services read configuration from the root `.env` file.
 
 ## Documentation
 

@@ -14,7 +14,7 @@
 
 ## Local run
 
-1. Copy `cmd/discord-hub/.env.example` to `cmd/discord-hub/.env` and fill values.
+1. Copy `.env.example` to `.env` at the repository root and fill values.
 2. Start the hub:
 
 ```bash
@@ -23,7 +23,7 @@ go run ./cmd/discord-hub
 
 3. In Discord, run `/ping` to verify the bot is responsive.
 
-`discord-hub` loads env files in this order: `cmd/discord-hub/.env`, then `.env` (legacy fallback).
+`discord-hub` reads configuration from the repository root `.env`.
 
 ## Spoke command discovery
 
@@ -42,14 +42,13 @@ SPOKE_COMMAND_SERVICES='[
 ]'
 ```
 
-Example with four services:
+Example with three services:
 
 ```bash
 SPOKE_COMMAND_SERVICES='[
   {"name":"beeminder-spoke","commandsUrl":"http://beeminder-spoke:8090/control/commands","executeUrl":"http://beeminder-spoke:8090/control/command"},
   {"name":"finance-spoke","commandsUrl":"http://finance-spoke:8091/control/commands","executeUrl":"http://finance-spoke:8091/control/command"},
-  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"},
-  {"name":"accountability-spoke","commandsUrl":"http://accountability-spoke:8093/control/commands","executeUrl":"http://accountability-spoke:8093/control/command"}
+  {"name":"kalshi-spoke","commandsUrl":"http://kalshi-spoke:8092/control/commands","executeUrl":"http://kalshi-spoke:8092/control/command"}
 ]'
 ```
 

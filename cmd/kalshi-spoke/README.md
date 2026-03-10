@@ -44,20 +44,20 @@ To actually place orders, all three must be true/false in the right combination:
 Other common vars:
 
 - `KALSHI_TRIGGER_YES_BID_DOLLARS`
-- `KALSHI_HUB_NOTIFY_URL`
-- `KALSHI_HUB_NOTIFY_AUTH_TOKEN`
+- `HUB_NOTIFY_URL`
+- `HUB_NOTIFY_AUTH_TOKEN`
 - `KALSHI_NOTIFY_CHANNEL`
 - `KALSHI_SUBACCOUNT`
 
 ## Local run
 
-Copy `cmd/kalshi-spoke/.env.example` to `cmd/kalshi-spoke/.env` and fill values.
+Configure values in the repository root `.env`.
 
 ```bash
 cargo run --manifest-path cmd/kalshi-spoke/Cargo.toml
 ```
 
-`kalshi-spoke` loads env files in this order: `cmd/kalshi-spoke/.env`, then `.env` (legacy fallback).
+`kalshi-spoke` reads configuration from the repository root `.env`.
 
 ## Local API
 

@@ -48,8 +48,8 @@ impl Config {
     pub fn load() -> Result<Self> {
         let enabled = bool_env_required("KALSHI_SPOKE_ENABLED")?;
         let http_addr = string_env_required("KALSHI_SPOKE_HTTP_ADDR")?;
-        let hub_notify_url = string_env_required("KALSHI_HUB_NOTIFY_URL")?;
-        let hub_notify_auth_token = string_env_required("KALSHI_HUB_NOTIFY_AUTH_TOKEN")?;
+        let hub_notify_url = string_env_required("HUB_NOTIFY_URL")?;
+        let hub_notify_auth_token = string_env_required("HUB_NOTIFY_AUTH_TOKEN")?;
         let notify_channel = string_env_required("KALSHI_NOTIFY_CHANNEL")?;
         let notify_severity = normalize_severity(&string_env_required("KALSHI_NOTIFY_SEVERITY")?)?;
         let state_file = PathBuf::from(string_env_required("KALSHI_STATE_FILE")?);

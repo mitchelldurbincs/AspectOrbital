@@ -383,12 +383,11 @@ async fn main() -> Result<()> {
 }
 
 fn load_dotenv() {
-    for path in ["cmd/kalshi-spoke/.env", ".env"] {
-        if let Err(err) = dotenvy::from_filename(path) {
-            match err {
-                dotenvy::Error::Io(io_err) if io_err.kind() == ErrorKind::NotFound => {}
-                _ => eprintln!("warning: unable to load {}: {}", path, err),
-            }
+    let path = ".env";
+    if let Err(err) = dotenvy::from_filename(path) {
+        match err {
+            dotenvy::Error::Io(io_err) if io_err.kind() == ErrorKind::NotFound => {}
+            _ => eprintln!("warning: unable to load {}: {}", path, err),
         }
     }
 }

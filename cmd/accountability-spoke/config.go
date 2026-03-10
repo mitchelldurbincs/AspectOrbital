@@ -17,8 +17,8 @@ type config struct {
 	ExpiryPollInterval time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL" required:"true"`
 	ExpiryGracePeriod  time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD" required:"true"`
 	ReminderInterval   time.Duration `envconfig:"ACCOUNTABILITY_REMINDER_INTERVAL" required:"true"`
-	HubNotifyURL       string        `envconfig:"ACCOUNTABILITY_HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken string        `envconfig:"ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	HubNotifyURL       string        `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken string        `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
 	NotifyChannel      string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
 	NotifySeverity     string        `envconfig:"ACCOUNTABILITY_NOTIFY_SEVERITY" required:"true"`
 	PolicyFile         string        `envconfig:"ACCOUNTABILITY_POLICY_FILE" required:"true"`
@@ -49,18 +49,18 @@ func loadConfig() (config, error) {
 	}
 
 	for key, value := range map[string]string{
-		"ACCOUNTABILITY_SPOKE_HTTP_ADDR":       cfg.HTTPAddr,
-		"ACCOUNTABILITY_DB_PATH":               cfg.DBPath,
-		"ACCOUNTABILITY_HUB_NOTIFY_URL":        cfg.HubNotifyURL,
-		"ACCOUNTABILITY_HUB_NOTIFY_AUTH_TOKEN": cfg.HubNotifyAuthToken,
-		"ACCOUNTABILITY_NOTIFY_CHANNEL":        cfg.NotifyChannel,
-		"ACCOUNTABILITY_NOTIFY_SEVERITY":       cfg.NotifySeverity,
-		"ACCOUNTABILITY_POLICY_FILE":           cfg.PolicyFile,
-		"ACCOUNTABILITY_COMMAND_COMMIT":        cfg.CommitCommandNameRaw,
-		"ACCOUNTABILITY_COMMAND_PROOF":         cfg.ProofCommandNameRaw,
-		"ACCOUNTABILITY_COMMAND_STATUS":        cfg.StatusCommandNameRaw,
-		"ACCOUNTABILITY_COMMAND_CANCEL":        cfg.CancelCommandNameRaw,
-		"ACCOUNTABILITY_COMMAND_SNOOZE":        cfg.SnoozeCommandNameRaw,
+		"ACCOUNTABILITY_SPOKE_HTTP_ADDR": cfg.HTTPAddr,
+		"ACCOUNTABILITY_DB_PATH":         cfg.DBPath,
+		"HUB_NOTIFY_URL":                 cfg.HubNotifyURL,
+		"HUB_NOTIFY_AUTH_TOKEN":          cfg.HubNotifyAuthToken,
+		"ACCOUNTABILITY_NOTIFY_CHANNEL":  cfg.NotifyChannel,
+		"ACCOUNTABILITY_NOTIFY_SEVERITY": cfg.NotifySeverity,
+		"ACCOUNTABILITY_POLICY_FILE":     cfg.PolicyFile,
+		"ACCOUNTABILITY_COMMAND_COMMIT":  cfg.CommitCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_PROOF":   cfg.ProofCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_STATUS":  cfg.StatusCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_CANCEL":  cfg.CancelCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_SNOOZE":  cfg.SnoozeCommandNameRaw,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return config{}, errors.New(key + " is required")

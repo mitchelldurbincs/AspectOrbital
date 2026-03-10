@@ -9,7 +9,8 @@ import (
 )
 
 func StandardEnvFiles(serviceDir string) []string {
-	return []string{serviceDir + "/.env", ".env"}
+	_ = serviceDir
+	return []string{".env"}
 }
 
 func LoadEnvFiles(logger *log.Logger, paths ...string) {
