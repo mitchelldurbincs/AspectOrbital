@@ -49,18 +49,13 @@ pub struct TriggerRuleState {
     pub last_action: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TriggerRulePhase {
+    #[default]
     Idle,
     SellPending,
     Triggered,
-}
-
-impl Default for TriggerRulePhase {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 pub struct StateStore {

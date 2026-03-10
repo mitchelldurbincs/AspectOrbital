@@ -10,6 +10,13 @@ import (
 )
 
 const singleObjectErr = "request body must contain a single JSON object"
+const defaultMaxBodyBytes int64 = 1 << 20
+
+// DecodeBody decodes a JSON request body using strict parsing rules and a
+// default 1 MiB payload limit.
+func DecodeBody(r *http.Request, out any) error {
+	return DecodeStrictJSONBody(r, out, defaultMaxBodyBytes)
+}
 
 // DecodeStrictJSONBody decodes a JSON request body while rejecting unknown fields
 // and additional JSON values after the first payload object.
@@ -58,4 +65,9 @@ func WriteJSON(w http.ResponseWriter, status int, payload any) {
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(payload)
+}
+
+// Write writes JSON response payloads with the provided HTTP status code.
+func Write(w http.ResponseWriter, status int, payload any) {
+	WriteJSON(w, status, payload)
 }

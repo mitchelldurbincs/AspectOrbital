@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"personal-infrastructure/pkg/httpjson"
 	"personal-infrastructure/pkg/spokecontrol"
 )
 
@@ -13,7 +14,7 @@ func (a *spokeApp) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpjson.Write(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *spokeApp) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -22,7 +23,7 @@ func (a *spokeApp) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, a.engine.Status())
+	httpjson.Write(w, http.StatusOK, a.engine.Status())
 }
 
 func (a *spokeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +32,7 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, commandCatalogForConfig(a.cfg))
+	httpjson.Write(w, http.StatusOK, commandCatalogForConfig(a.cfg))
 }
 
 func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +46,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload commandRequest
-	if err := decodeJSONBody(r, &payload); err != nil {
+	if err := httpjson.DecodeBody(r, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -60,7 +61,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpjson.Write(w, http.StatusOK, result)
 }
 
 func (a *spokeApp) handleStarted(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +76,7 @@ func (a *spokeApp) handleStarted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpjson.Write(w, http.StatusOK, result)
 }
 
 func (a *spokeApp) handleSnooze(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +86,7 @@ func (a *spokeApp) handleSnooze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload snoozeRequest
-	if err := decodeJSONBody(r, &payload); err != nil {
+	if err := httpjson.DecodeBody(r, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -104,7 +105,7 @@ func (a *spokeApp) handleSnooze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpjson.Write(w, http.StatusOK, result)
 }
 
 func (a *spokeApp) handleResume(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +120,7 @@ func (a *spokeApp) handleResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpjson.Write(w, http.StatusOK, result)
 }
 
 type snoozeRequest struct {
