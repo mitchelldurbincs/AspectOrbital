@@ -71,18 +71,14 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		commitment, err := a.service.CommitWithPolicy(r.Context(), userID, resolvedPolicy.Task, deadline, resolvedPolicy.Preset, resolvedPolicy.Engine, resolvedPolicy.ConfigJSON)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAccountabilityError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Committed until %s for %s using preset %s", commitment.Deadline.Format(time.RFC3339), commitment.Task, commitment.PolicyPreset), commitment))
 	case a.cfg.ProofCommandName:
 		active, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
-				http.Error(w, "no active commitment", http.StatusBadRequest)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAccountabilityError(w, err)
 			return
 		}
 		attachment := parseAttachment(req.Options["proof"])
@@ -95,7 +91,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		proofText := mapOptionString(req.Options, "text")
 		evaluation, err := a.policies.Evaluate(r.Context(), active, attachment, proofText)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if !evaluation.Pass {
@@ -104,11 +100,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		commitment, err := a.service.SubmitProof(r.Context(), userID, accountability.ProofSubmission{Attachment: attachment, Text: proofText, Verdict: evaluation.Verdict})
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
-				http.Error(w, "no active commitment", http.StatusBadRequest)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAccountabilityError(w, err)
 			return
 		}
 		message := "Proof accepted; commitment completed."
@@ -119,11 +111,11 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 	case a.cfg.StatusCommandName:
 		commitment, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			if errors.Is(err, accountability.ErrNotFound) {
 				writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "No active commitment.", nil))
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAccountabilityError(w, err)
 			return
 		}
 		message := fmt.Sprintf("Active commitment: %s (due %s)", commitment.Task, commitment.Deadline.Format(time.RFC3339))
@@ -142,22 +134,14 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		commitment, err := a.service.Snooze(r.Context(), userID, duration, a.cfg.MaxSnooze)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
-				http.Error(w, "no active commitment", http.StatusBadRequest)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAccountabilityError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Reminders snoozed until %s", commitment.SnoozedUntil.Format(time.RFC3339)), commitment))
 	case a.cfg.CancelCommandName:
 		commitment, err := a.service.Cancel(r.Context(), userID)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
-				http.Error(w, "no active commitment", http.StatusBadRequest)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAccountabilityError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "Commitment canceled.", commitment))
@@ -240,4 +224,17 @@ func mapOptionString(m map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(v))
+}
+
+func writeAccountabilityError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, accountability.ErrInvalid):
+		status = http.StatusBadRequest
+	case errors.Is(err, accountability.ErrNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, accountability.ErrConflict):
+		status = http.StatusConflict
+	}
+	http.Error(w, accountability.ErrorMessage(err), status)
 }

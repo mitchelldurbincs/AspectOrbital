@@ -1,8 +1,17 @@
 package main
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"personal-infrastructure/pkg/accountability"
 )
 
 func TestParseDeadlineClockTimeRollsToNextDay(t *testing.T) {
@@ -56,5 +65,129 @@ func TestParseAttachmentSupportsContentTypeAliasesAndSize(t *testing.T) {
 	attachment = parseAttachment(map[string]any{"contentType": "image/jpeg"})
 	if attachment.ContentType != "image/jpeg" {
 		t.Fatalf("expected camelCase contentType fallback, got: %q", attachment.ContentType)
+	}
+}
+
+func TestHandleCommandCommitValidationErrorReturns400(t *testing.T) {
+	app := newTestSpokeApp(t)
+	rec := performCommandRequest(t, app, `{"command":"commit","context":{"discordUserId":"u1"},"options":{"deadline":"not-a-deadline"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "deadline must be RFC3339") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleCommandCommitConflictReturns409(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.Commit(context.Background(), "u1", "existing task", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := performCommandRequest(t, app, `{"command":"commit","context":{"discordUserId":"u1"},"options":{"deadline":"1h"}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "already have an active commitment") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleCommandProofNotFoundReturns404(t *testing.T) {
+	app := newTestSpokeApp(t)
+	rec := performCommandRequest(t, app, `{"command":"proof","context":{"discordUserId":"u1"}}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "no active commitment") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleCommandCommitDatabaseFailureReturns500(t *testing.T) {
+	app := newTestSpokeApp(t)
+	if err := app.serviceDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := performCommandRequest(t, app, `{"command":"commit","context":{"discordUserId":"u1"},"options":{"deadline":"1h"}}`)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if strings.TrimSpace(rec.Body.String()) == "" {
+		t.Fatal("expected error body for internal failure")
+	}
+}
+
+type testSpokeApp struct {
+	*spokeApp
+	serviceDB *sql.DB
+}
+
+func newTestSpokeApp(t *testing.T) *testSpokeApp {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "accountability.sqlite")
+	db, err := accountability.OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	if err := accountability.Bootstrap(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	service, err := accountability.NewService(db, time.Minute, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return &testSpokeApp{
+		spokeApp: &spokeApp{
+			cfg: config{
+				CommitCommandName: "commit",
+				ProofCommandName:  "proof",
+				StatusCommandName: "status",
+				CancelCommandName: "cancel",
+				SnoozeCommandName: "snooze",
+				DefaultSnooze:     10 * time.Minute,
+				MaxSnooze:         time.Hour,
+			},
+			service: service,
+			policies: policyCatalog{
+				defaultPreset: "default",
+				presets: map[string]resolvedPreset{
+					"default": {Name: "default", Task: "default task", Engine: policyEngineAttachment, ConfigJSON: `{}`},
+				},
+			},
+		},
+		serviceDB: db,
+	}
+}
+
+func performCommandRequest(t *testing.T, app *testSpokeApp, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	app.handleCommand(rec, req)
+	return rec
+}
+
+func TestHandleCommandStatusWithoutCommitmentReturnsOK(t *testing.T) {
+	app := newTestSpokeApp(t)
+	rec := performCommandRequest(t, app, `{"command":"status","context":{"discordUserId":"u1"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["message"] != "No active commitment." {
+		t.Fatalf("unexpected payload: %#v", payload)
 	}
 }
