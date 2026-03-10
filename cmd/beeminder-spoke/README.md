@@ -78,12 +78,12 @@ Command names are configurable via env (`BEEMINDER_COMMAND_*`), so Discord slash
 ## Behavior config highlights
 
 - `BEEMINDER_REQUIRE_DAILY_RATE=true|false`
-  - `true` (default): required progress is `max(beeminder delta, daily rate)`.
-  - `false`: required progress is Beeminder `delta` only (emergency-only mode).
+	- `true`: required progress is `max(beeminder delta, daily rate)`.
+	- `false`: required progress is Beeminder `delta` only (emergency-only mode).
 - `BEEMINDER_REMINDER_SCHEDULE` can override intervals during the day (example: `16:00=1h,18:00=30m,19:15=5m`).
 - `BEEMINDER_BEDTIME=HH:MM` suppresses reminders at/after bedtime in your Beeminder timezone.
 - `BEEMINDER_ACTION_URLS=goal=https://...` appends per-goal quick links to reminders (for example, Skritter).
-- `BEEMINDER_MAX_SNOOZE` caps `/b-snooze` duration.
+- `BEEMINDER_MAX_SNOOZE` is the hard maximum for `/b-snooze`; requests above it fail.
 
 `GET /control/commands` returns a command catalog with command descriptions and option metadata. `discord-hub` reads this catalog and mirrors it as slash commands.
 
@@ -92,4 +92,4 @@ Command names are configurable via env (`BEEMINDER_COMMAND_*`), so Discord slash
 - `GET /control/commands`
 - `POST /control/command`
 
-`POST /control/command` requires both `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}` and `context.discordUserId`.
+`POST /control/command` requires both `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}` and `context.discordUserId`. `duration` is required for `/b-snooze`, and command names are matched exactly.

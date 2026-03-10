@@ -51,7 +51,7 @@ Personal infrastructure automation platform built as a modular microservice ecos
 - Multi-stage Dockerfiles for all services with non-root execution
 - Docker Compose orchestration for local and deployment use
 - Shared Go packages (`pkg/`) for logging, lifecycle management, hub notifications, and config utilities
-- Strict environment variable validation across all spokes (no silent fallback defaults)
+- Strict environment variable validation and strict spoke-command contracts (no silent fallback defaults, aliases, or runtime normalization)
 - Single root `.env` configuration shared by local runs and Docker Compose
 
 ### In progress / not yet complete
@@ -86,6 +86,8 @@ docker compose up --build
 All services read configuration from the root `.env` file.
 
 Spoke command execution now requires `Authorization: Bearer ${SPOKE_COMMAND_AUTH_TOKEN}`; `discord-hub` injects that header when routing slash commands to spoke `POST /control/command` endpoints.
+
+Spoke command catalogs and requests are now exact-match only: command names and option names must already be lowercase canonical values, option types must use the canonical contract vocabulary, and malformed spoke catalogs fail registration instead of being normalized.
 
 ## Documentation
 

@@ -12,7 +12,7 @@ Default command names (all configurable via `BEEMINDER_COMMAND_*` env vars):
 
 - `/started` — pause reminders while you get started.
 - `/b-snooze` — pause reminders for a duration.
-  - option: `duration` (string, optional)
+  - option: `duration` (string, required)
 - `/resume` — resume reminders immediately.
 - `/status` — show progress and next reminder time.
 
@@ -23,8 +23,8 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 - `/commit` — commit to a task with a deadline.
   - options:
     - `deadline` (string, required; RFC3339, unix seconds, duration, or clock time like `4:30am`)
-    - `task` (string, optional; defaults from preset)
-    - `preset` (string, optional; defaults to global defaultPreset)
+    - `task` (string, optional; if omitted the selected preset still provides the task)
+    - `preset` (string, optional; if omitted the global `defaultPreset` is used)
 - `/proof` — submit proof for your active commitment.
   - options:
     - `proof` (attachment, optional)
@@ -34,7 +34,7 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
     - `text` (string, required)
 - `/status` — show your active commitment.
 - `/a-snooze` — snooze reminders for your active commitment.
-  - option: `duration` (string, optional; example `10m`)
+  - option: `duration` (string, required; example `10m`)
 - `/cancel` — cancel your active commitment.
 
 ## `finance-spoke` (discovered via `/control/commands`)

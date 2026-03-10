@@ -29,15 +29,17 @@ Minimum required settings for a local run:
 - `ACCOUNTABILITY_DISCORD_CALLBACK_URL` and `ACCOUNTABILITY_CALLBACK_AUTH_TOKEN` - callback endpoint and bearer token for reminder action buttons.
 - `ACCOUNTABILITY_NOTIFY_CHANNEL` and `ACCOUNTABILITY_NOTIFY_SEVERITY` - default target for overdue reminders.
 - `ACCOUNTABILITY_POLICY_FILE` - JSON policy catalog path.
-- `ACCOUNTABILITY_DEFAULT_SNOOZE` and `ACCOUNTABILITY_MAX_SNOOZE` - slash-command snooze defaults and upper bound.
+- `ACCOUNTABILITY_DEFAULT_SNOOZE` and `ACCOUNTABILITY_MAX_SNOOZE` - reminder action snooze duration and upper bound.
 - `ACCOUNTABILITY_COMMAND_*` - command-name overrides; defaults in `.env.example` are `commit`, `proof`, `checkin`, `status`, `cancel`, and `a-snooze`.
 
-Optional OpenAI settings are only needed for `openai_vision` presets:
+OpenAI settings:
 
 - `ACCOUNTABILITY_OPENAI_API_KEY`
 - `ACCOUNTABILITY_OPENAI_BASE_URL`
 - `ACCOUNTABILITY_OPENAI_MODEL`
 - `ACCOUNTABILITY_OPENAI_TIMEOUT`
+
+`ACCOUNTABILITY_OPENAI_BASE_URL`, `ACCOUNTABILITY_OPENAI_MODEL`, and `ACCOUNTABILITY_OPENAI_TIMEOUT` are required at startup. `ACCOUNTABILITY_OPENAI_API_KEY` is only needed when a policy uses `openai_vision`.
 
 Minimal example:
 
@@ -56,6 +58,9 @@ ACCOUNTABILITY_CALLBACK_AUTH_TOKEN=replace-with-long-random-token
 ACCOUNTABILITY_NOTIFY_CHANNEL=accountability
 ACCOUNTABILITY_NOTIFY_SEVERITY=warning
 ACCOUNTABILITY_POLICY_FILE=cmd/accountability-spoke/policies.json
+ACCOUNTABILITY_OPENAI_BASE_URL=https://api.openai.com/v1
+ACCOUNTABILITY_OPENAI_MODEL=gpt-4.1-mini
+ACCOUNTABILITY_OPENAI_TIMEOUT=20s
 ACCOUNTABILITY_DEFAULT_SNOOZE=10m
 ACCOUNTABILITY_MAX_SNOOZE=60m
 ACCOUNTABILITY_COMMAND_COMMIT=commit
@@ -79,11 +84,11 @@ Default command names are configurable with `ACCOUNTABILITY_COMMAND_*` env vars.
 - `/checkin text:"..."`
 - `/status`
 - `/cancel`
-- `/a-snooze [duration:"10m"]`
+- `/a-snooze duration:"10m"`
 
 Reminder action buttons POST to `/discord/callback` and require `Authorization: Bearer <ACCOUNTABILITY_CALLBACK_AUTH_TOKEN>`.
 
-`POST /control/command` requires `Authorization: Bearer <SPOKE_COMMAND_AUTH_TOKEN>` plus `context.discordUserId`.
+`POST /control/command` requires `Authorization: Bearer <SPOKE_COMMAND_AUTH_TOKEN>` plus `context.discordUserId`. Command names and option names must already be canonical lowercase values; the spoke no longer trims or normalizes them.
 
 Deadline input supports:
 
@@ -110,6 +115,6 @@ Built-in policy engines:
 `openai_vision` config fields:
 
 - `prompt` (required)
-- `minConfidence` (optional, default `0.75`)
+- `minConfidence` (optional; omit to use the policy engine's current threshold behavior)
 
 Policy loading is fail-hard: the spoke does not start if `policies.json` is invalid, references an unknown engine, or references `openai_vision` without OpenAI config.

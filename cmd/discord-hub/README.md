@@ -31,7 +31,7 @@ go run ./cmd/discord-hub
 
 ### Required configuration (`SPOKE_COMMAND_SERVICES`)
 
-Use `SPOKE_COMMAND_SERVICES` to load commands from multiple spokes. It must be a JSON array with `name`, `commandsUrl`, and `executeUrl` per service.
+Use `SPOKE_COMMAND_SERVICES` to load commands from multiple spokes. It must be a JSON array with explicit `name`, `commandsUrl`, and `executeUrl` values per service.
 
 Example with two services:
 
@@ -67,6 +67,8 @@ Set `SPOKE_COMMANDS_ENABLED=false` to disable discovery and keep only `/ping`.
 
 `discord-hub` enforces globally unique slash command names across all services. Startup fails when duplicate names are discovered.
 
+Spoke command catalogs are strict: reserved names like `ping`, non-canonical command or option names, unsupported option types, and malformed service definitions all fail discovery instead of being normalized.
+
 ## Notify endpoint
 
 Configure channel routing with `DISCORD_CHANNEL_MAP`:
@@ -74,6 +76,8 @@ Configure channel routing with `DISCORD_CHANNEL_MAP`:
 ```bash
 DISCORD_CHANNEL_MAP='kalshi-alerts:1234567890,mandarin-streaks:2345678901'
 ```
+
+Malformed `DISCORD_CHANNEL_MAP` entries now fail startup; each entry must be `name:id`.
 
 Send alerts from local services:
 
