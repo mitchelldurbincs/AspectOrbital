@@ -63,6 +63,9 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Contract compatibility tests
+        run: cargo test schema_contract_compat_
+
       - name: Fmt
         run: cargo fmt -- --check
 
