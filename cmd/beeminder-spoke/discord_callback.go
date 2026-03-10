@@ -2,13 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"personal-infrastructure/pkg/discordcallback"
 	"personal-infrastructure/pkg/hubnotify"
-	"personal-infrastructure/pkg/spokecontract"
 )
 
 func (a *spokeApp) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
@@ -20,51 +20,65 @@ func (a *spokeApp) handleDiscordCallback(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *spokeApp) dispatchDiscordCallback(r *http.Request, payload hubnotify.ActionCallbackRequest) (hubnotify.ActionCallbackResponse, int, error) {
-	commandPayload, err := callbackActionToCommand(a, payload)
+	actionID, goalSlug, err := parseScopedDiscordAction(payload.Action.ID)
 	if err != nil {
 		return hubnotify.ActionCallbackResponse{}, http.StatusBadRequest, err
 	}
+	if !a.isConfiguredGoal(goalSlug) {
+		return hubnotify.ActionCallbackResponse{}, http.StatusBadRequest, fmt.Errorf("unknown goal slug %q", goalSlug)
+	}
 
-	result, statusCode, err := a.executeCommand(time.Now().UTC(), commandPayload)
+	now := time.Now().UTC()
+	message, statusCode, err := a.executeGoalScopedAction(now, actionID, goalSlug)
 	if err != nil {
 		return hubnotify.ActionCallbackResponse{}, statusCode, err
 	}
-
-	message, _ := result["message"].(string)
 	message = strings.TrimSpace(message)
 	if message == "" {
-		return hubnotify.ActionCallbackResponse{}, http.StatusInternalServerError, errors.New("callback command returned empty message")
+		return hubnotify.ActionCallbackResponse{}, http.StatusInternalServerError, errors.New("callback action returned empty message")
 	}
 
 	return hubnotify.ActionCallbackResponse{Status: "ok", Message: message}, http.StatusOK, nil
 }
 
-func callbackActionToCommand(a *spokeApp, payload hubnotify.ActionCallbackRequest) (commandRequest, error) {
-	ctx := spokecontract.CommandContext{
-		DiscordUserID: strings.TrimSpace(payload.Context.DiscordUserID),
-		GuildID:       strings.TrimSpace(payload.Context.GuildID),
-		ChannelID:     strings.TrimSpace(payload.Context.ChannelID),
+func (a *spokeApp) executeGoalScopedAction(now time.Time, actionID string, goalSlug string) (string, int, error) {
+	switch actionID {
+	case discordActionSnooze10m:
+		until := a.engine.SnoozeGoal(goalSlug, now, 10*time.Minute)
+		return fmt.Sprintf("Snoozed reminders for %s for 10m (until %s).", goalSlug, formatClockInLocation(until, a.location)), http.StatusOK, nil
+	case discordActionSnooze30m:
+		until := a.engine.SnoozeGoal(goalSlug, now, 30*time.Minute)
+		return fmt.Sprintf("Snoozed reminders for %s for 30m (until %s).", goalSlug, formatClockInLocation(until, a.location)), http.StatusOK, nil
+	case discordActionAcknowledge:
+		until := a.engine.MarkStartedGoal(goalSlug, now)
+		return fmt.Sprintf("Got it. Paused reminders for %s until %s.", goalSlug, formatClockInLocation(until, a.location)), http.StatusOK, nil
+	default:
+		return "", http.StatusBadRequest, errors.New("unknown action id")
+	}
+}
+
+func parseScopedDiscordAction(raw string) (string, string, error) {
+	value := strings.TrimSpace(raw)
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("action.id must include a goal slug")
 	}
 
-	switch strings.TrimSpace(payload.Action.ID) {
-	case discordActionSnooze10m:
-		return commandRequest{
-			Command: a.cfg.Commands.Snooze,
-			Context: ctx,
-			Options: map[string]any{snoozeDurationOptionName: "10m"},
-		}, nil
-	case discordActionSnooze30m:
-		return commandRequest{
-			Command: a.cfg.Commands.Snooze,
-			Context: ctx,
-			Options: map[string]any{snoozeDurationOptionName: "30m"},
-		}, nil
-	case discordActionAcknowledge:
-		return commandRequest{
-			Command: a.cfg.Commands.Started,
-			Context: ctx,
-		}, nil
-	default:
-		return commandRequest{}, errors.New("unknown action id")
+	actionID := strings.TrimSpace(parts[0])
+	goalSlug := strings.TrimSpace(parts[1])
+	if actionID == "" || goalSlug == "" {
+		return "", "", errors.New("action.id must include a non-empty action and goal slug")
 	}
+
+	return actionID, goalSlug, nil
+}
+
+func (a *spokeApp) isConfiguredGoal(goalSlug string) bool {
+	for _, configuredGoalSlug := range a.cfg.BeeminderGoalSlugs {
+		if strings.TrimSpace(configuredGoalSlug) == strings.TrimSpace(goalSlug) {
+			return true
+		}
+	}
+
+	return false
 }

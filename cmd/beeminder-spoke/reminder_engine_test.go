@@ -97,3 +97,37 @@ func TestMarkReminderSentSetsNextReminderUsingInterval(t *testing.T) {
 		t.Fatalf("NextReminderAt = %s, want %s", goal.NextReminderAt, want)
 	}
 }
+
+func TestSnoozeGoalOnlyAffectsTargetGoal(t *testing.T) {
+	cfg := testConfig()
+	cfg.BeeminderGoalSlugs = []string{"study", "writing"}
+	engine := newReminderEngine(cfg)
+	now := time.Date(2026, time.March, 9, 12, 0, 0, 0, time.UTC)
+
+	until := engine.SnoozeGoal("study", now, 10*time.Minute)
+	status := engine.Status()
+
+	if status.Goals["study"].SnoozedUntil == nil || !status.Goals["study"].SnoozedUntil.Equal(until) {
+		t.Fatalf("study SnoozedUntil = %#v, want %s", status.Goals["study"].SnoozedUntil, until)
+	}
+	if status.Goals["writing"].SnoozedUntil != nil {
+		t.Fatalf("writing SnoozedUntil = %#v, want nil", status.Goals["writing"].SnoozedUntil)
+	}
+}
+
+func TestMarkStartedGoalOnlyAffectsTargetGoal(t *testing.T) {
+	cfg := testConfig()
+	cfg.BeeminderGoalSlugs = []string{"study", "writing"}
+	engine := newReminderEngine(cfg)
+	now := time.Date(2026, time.March, 9, 12, 0, 0, 0, time.UTC)
+
+	until := engine.MarkStartedGoal("study", now)
+	status := engine.Status()
+
+	if status.Goals["study"].SnoozedUntil == nil || !status.Goals["study"].SnoozedUntil.Equal(until) {
+		t.Fatalf("study SnoozedUntil = %#v, want %s", status.Goals["study"].SnoozedUntil, until)
+	}
+	if status.Goals["writing"].SnoozedUntil != nil {
+		t.Fatalf("writing SnoozedUntil = %#v, want nil", status.Goals["writing"].SnoozedUntil)
+	}
+}

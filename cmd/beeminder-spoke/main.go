@@ -91,8 +91,8 @@ func run(logger *log.Logger) error {
 		TickInterval:    cfg.PollInterval,
 		RunImmediately:  true,
 		ShutdownTimeout: 10 * time.Second,
-		OnTick: func(context.Context) error {
-			if err := app.runCycle(context.Background()); err != nil {
+		OnTick: func(ctx context.Context) error {
+			if err := app.runCycle(ctx); err != nil {
 				logger.Printf("beeminder check failed: %v", err)
 			}
 			return nil

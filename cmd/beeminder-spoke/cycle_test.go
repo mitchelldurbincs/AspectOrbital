@@ -14,8 +14,9 @@ import (
 	"personal-infrastructure/pkg/hubnotify"
 )
 
-func TestRunCycleStopsOnFirstGoalError(t *testing.T) {
+func TestRunCycleContinuesAfterGoalError(t *testing.T) {
 	var secondGoalHit bool
+	var notifyRequests []hubnotify.NotifyRequest
 
 	beeminderServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -24,6 +25,55 @@ func TestRunCycleStopsOnFirstGoalError(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/goals/second.json"):
 			secondGoalHit = true
 			fmt.Fprint(w, `{"slug":"second","rate":1,"runits":"d","deadline":0,"gunits":"units","aggday":"sum","delta":1}`)
+		case strings.Contains(r.URL.Path, "/goals/second/datapoints.json"):
+			fmt.Fprint(w, `[]`)
+		default:
+			t.Fatalf("unexpected beeminder path: %s", r.URL.Path)
+		}
+	}))
+	defer beeminderServer.Close()
+
+	hubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload hubnotify.NotifyRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode notify payload: %v", err)
+		}
+		notifyRequests = append(notifyRequests, payload)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hubServer.Close()
+
+	cfg := testConfig()
+	cfg.BeeminderGoalSlugs = []string{"first", "second"}
+	cfg.BeeminderBaseURL = beeminderServer.URL
+	app := newTestAppWithClients(cfg, beeminderServer.Client(), hubServer.URL)
+
+	err := app.runCycle(context.Background())
+	if err == nil {
+		t.Fatal("runCycle() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), `goal "first"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !secondGoalHit {
+		t.Fatal("second goal was not evaluated")
+	}
+	if len(notifyRequests) != 1 {
+		t.Fatalf("notify request count = %d, want 1", len(notifyRequests))
+	}
+	if notifyRequests[0].Summary == "" || !strings.Contains(notifyRequests[0].Summary, "second reminder") {
+		t.Fatalf("unexpected reminder summary: %q", notifyRequests[0].Summary)
+	}
+}
+
+func TestRunCycleAggregatesGoalErrors(t *testing.T) {
+	beeminderServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/goals/first.json"):
+			http.Error(w, "boom-first", http.StatusInternalServerError)
+		case strings.Contains(r.URL.Path, "/goals/second.json"):
+			http.Error(w, "boom-second", http.StatusBadGateway)
 		default:
 			t.Fatalf("unexpected beeminder path: %s", r.URL.Path)
 		}
@@ -44,11 +94,8 @@ func TestRunCycleStopsOnFirstGoalError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runCycle() error = nil, want non-nil")
 	}
-	if !strings.Contains(err.Error(), `goal "first"`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if secondGoalHit {
-		t.Fatal("second goal was evaluated; expected fail-fast behavior")
+	if !strings.Contains(err.Error(), `goal "first"`) || !strings.Contains(err.Error(), `goal "second"`) {
+		t.Fatalf("unexpected aggregated error: %v", err)
 	}
 }
 
@@ -113,7 +160,7 @@ func TestRunGoalCycleSendsReminderWhenBehind(t *testing.T) {
 	if len(notifyRequests[0].Actions) != 3 {
 		t.Fatalf("action count = %d, want 3", len(notifyRequests[0].Actions))
 	}
-	if notifyRequests[0].Actions[0].ID != discordActionSnooze10m || notifyRequests[0].Actions[1].ID != discordActionSnooze30m || notifyRequests[0].Actions[2].ID != discordActionAcknowledge {
+	if notifyRequests[0].Actions[0].ID != scopedDiscordActionID(discordActionSnooze10m, "study") || notifyRequests[0].Actions[1].ID != scopedDiscordActionID(discordActionSnooze30m, "study") || notifyRequests[0].Actions[2].ID != scopedDiscordActionID(discordActionAcknowledge, "study") {
 		t.Fatalf("unexpected actions: %#v", notifyRequests[0].Actions)
 	}
 	if len(notifyRequests[0].Fields) == 0 {

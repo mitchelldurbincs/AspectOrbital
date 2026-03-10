@@ -50,8 +50,11 @@ func RunHTTPService(opts HTTPServiceOptions) error {
 	signalCh, stopSignals := serviceSignalChannel(opts.SignalCh)
 	defer stopSignals()
 
+	serviceCtx, cancelService := context.WithCancel(context.Background())
+	defer cancelService()
+
 	if opts.OnStart != nil {
-		if err := opts.OnStart(context.Background()); err != nil {
+		if err := opts.OnStart(serviceCtx); err != nil {
 			return err
 		}
 	}
@@ -65,7 +68,7 @@ func RunHTTPService(opts HTTPServiceOptions) error {
 	}
 
 	if opts.RunImmediately && opts.OnTick != nil {
-		if err := opts.OnTick(context.Background()); err != nil {
+		if err := opts.OnTick(serviceCtx); err != nil {
 			return err
 		}
 	}
@@ -74,10 +77,11 @@ func RunHTTPService(opts HTTPServiceOptions) error {
 		if opts.OnTick == nil {
 			return
 		}
-		if err := opts.OnTick(context.Background()); err != nil && opts.Logger != nil {
+		if err := opts.OnTick(serviceCtx); err != nil && opts.Logger != nil {
 			opts.Logger.Printf("background tick failed: %v", err)
 		}
 	})
+	cancelService()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
 	defer cancel()

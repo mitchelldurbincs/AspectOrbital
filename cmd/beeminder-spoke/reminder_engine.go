@@ -132,8 +132,26 @@ func (e *reminderEngine) Snooze(now time.Time, duration time.Duration) time.Time
 	return until
 }
 
+func (e *reminderEngine) SnoozeGoal(goalSlug string, now time.Time, duration time.Duration) time.Time {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	until := now.Add(duration)
+	state := e.stateForGoal(goalSlug)
+	if until.After(state.SnoozedUntil) {
+		state.SnoozedUntil = until
+	}
+	state.NextReminderAt = state.SnoozedUntil
+
+	return until
+}
+
 func (e *reminderEngine) MarkStarted(now time.Time) time.Time {
 	return e.Snooze(now, e.cfg.StartedSnooze)
+}
+
+func (e *reminderEngine) MarkStartedGoal(goalSlug string, now time.Time) time.Time {
+	return e.SnoozeGoal(goalSlug, now, e.cfg.StartedSnooze)
 }
 
 func (e *reminderEngine) Resume(now time.Time) {
@@ -146,6 +164,16 @@ func (e *reminderEngine) Resume(now time.Time) {
 		state.ActiveUntil = time.Time{}
 		state.NextReminderAt = now
 	}
+}
+
+func (e *reminderEngine) ResumeGoal(goalSlug string, now time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	state := e.stateForGoal(goalSlug)
+	state.SnoozedUntil = time.Time{}
+	state.ActiveUntil = time.Time{}
+	state.NextReminderAt = now
 }
 
 func (e *reminderEngine) Status() reminderStatus {

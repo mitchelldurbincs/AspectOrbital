@@ -39,6 +39,10 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !spokecontrol.IsAuthorized(r, a.cfg.SpokeCommandAuthToken) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	var payload commandRequest
 	if err := decodeJSONBody(r, &payload); err != nil {

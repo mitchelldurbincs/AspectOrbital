@@ -162,7 +162,7 @@ func TestInteractionHandlerForwardsSpokeCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
 	runtime := newBridgeRuntime()
@@ -233,7 +233,7 @@ func TestInteractionHandlerFormatsSpokeCommandFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), server.URL, server.URL, map[string]spokebridge.CommandSpec{
+	bridge := spokebridge.NewBridge(log.New(io.Discard, "", 0), server.Client(), "", server.URL, server.URL, map[string]spokebridge.CommandSpec{
 		"status": {Name: "status"},
 	})
 	runtime := newBridgeRuntime()
@@ -307,7 +307,7 @@ func TestInteractionHandlerRoutesButtonCallbacks(t *testing.T) {
 		followupEphemeralFunc = prevFollowup
 	})
 
-	customID := encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m")
+	customID := encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m:study")
 	message := &discordgo.Message{
 		ID: "m-1",
 		Embeds: []*discordgo.MessageEmbed{{
@@ -326,7 +326,7 @@ func TestInteractionHandlerRoutesButtonCallbacks(t *testing.T) {
 	if dispatcher.callbackURL != "http://127.0.0.1:8092/callback" {
 		t.Fatalf("unexpected callback URL: %q", dispatcher.callbackURL)
 	}
-	if dispatcher.payload.Action.ID != "snooze_10m" || dispatcher.payload.Action.Label != "Snooze 10m" {
+	if dispatcher.payload.Action.ID != "snooze_10m:study" || dispatcher.payload.Action.Label != "Snooze 10m" {
 		t.Fatalf("unexpected action payload: %#v", dispatcher.payload.Action)
 	}
 	if dispatcher.payload.Context.DiscordUserID != "u-123" || dispatcher.payload.Context.MessageID != "m-1" {

@@ -91,6 +91,8 @@ func TestRunHTTPServiceRunsStartImmediateTickAndStop(t *testing.T) {
 	var startCalls atomic.Int32
 	var tickCalls atomic.Int32
 	var stopCalls atomic.Int32
+	var startCtx context.Context
+	tickCtxCh := make(chan context.Context, 4)
 
 	go func() {
 		time.Sleep(30 * time.Millisecond)
@@ -103,12 +105,17 @@ func TestRunHTTPServiceRunsStartImmediateTickAndStop(t *testing.T) {
 		RunImmediately: true,
 		TickInterval:   10 * time.Millisecond,
 		SignalCh:       sigCh,
-		OnStart: func(context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			startCtx = ctx
 			startCalls.Add(1)
 			return nil
 		},
-		OnTick: func(context.Context) error {
+		OnTick: func(ctx context.Context) error {
 			tickCalls.Add(1)
+			select {
+			case tickCtxCh <- ctx:
+			default:
+			}
 			return nil
 		},
 		OnStop: func(context.Context) error {
@@ -128,6 +135,20 @@ func TestRunHTTPServiceRunsStartImmediateTickAndStop(t *testing.T) {
 	}
 	if stopCalls.Load() != 1 {
 		t.Fatalf("expected one stop call, got %d", stopCalls.Load())
+	}
+	if startCtx == nil {
+		t.Fatal("expected start hook context")
+	}
+	if err := startCtx.Err(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("start hook context err = %v, want %v", err, context.Canceled)
+	}
+	select {
+	case tickCtx := <-tickCtxCh:
+		if err := tickCtx.Err(); !errors.Is(err, context.Canceled) {
+			t.Fatalf("tick hook context err = %v, want %v", err, context.Canceled)
+		}
+	default:
+		t.Fatal("expected at least one tick hook context")
 	}
 }
 

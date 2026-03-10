@@ -24,12 +24,13 @@ type config struct {
 	BeeminderGoalSlugRaw  string   `envconfig:"BEEMINDER_GOAL_SLUG"`
 	BeeminderGoalSlugs    []string `ignored:"true"`
 
-	HubNotifyURL        string `envconfig:"HUB_NOTIFY_URL" required:"true"`
-	HubNotifyAuthToken  string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
-	DiscordCallbackURL  string `envconfig:"BEEMINDER_DISCORD_CALLBACK_URL" required:"true"`
-	CallbackAuthToken   string `envconfig:"BEEMINDER_CALLBACK_AUTH_TOKEN" required:"true"`
-	NotifyTargetChannel string `envconfig:"BEEMINDER_NOTIFY_CHANNEL" required:"true"`
-	NotifySeverity      string `envconfig:"BEEMINDER_NOTIFY_SEVERITY" required:"true"`
+	HubNotifyURL          string `envconfig:"HUB_NOTIFY_URL" required:"true"`
+	HubNotifyAuthToken    string `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
+	SpokeCommandAuthToken string `envconfig:"SPOKE_COMMAND_AUTH_TOKEN" required:"true"`
+	DiscordCallbackURL    string `envconfig:"BEEMINDER_DISCORD_CALLBACK_URL" required:"true"`
+	CallbackAuthToken     string `envconfig:"BEEMINDER_CALLBACK_AUTH_TOKEN" required:"true"`
+	NotifyTargetChannel   string `envconfig:"BEEMINDER_NOTIFY_CHANNEL" required:"true"`
+	NotifySeverity        string `envconfig:"BEEMINDER_NOTIFY_SEVERITY" required:"true"`
 
 	PollInterval     time.Duration `envconfig:"BEEMINDER_POLL_INTERVAL" required:"true"`
 	ReminderInterval time.Duration `envconfig:"BEEMINDER_REMINDER_INTERVAL" required:"true"`

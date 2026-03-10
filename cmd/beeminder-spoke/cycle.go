@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,10 +21,15 @@ func (a *spokeApp) runCycle(parentCtx context.Context) error {
 	nowUTC := time.Now().UTC()
 	nowLocal := nowUTC.In(a.location)
 
+	var errs []error
 	for _, goalSlug := range a.cfg.BeeminderGoalSlugs {
 		if err := a.runGoalCycle(ctx, goalSlug, nowUTC, nowLocal); err != nil {
-			return err
+			errs = append(errs, err)
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
@@ -101,9 +107,9 @@ func (a *spokeApp) runGoalCycle(ctx context.Context, goalSlug string, nowUTC, no
 		},
 		CallbackURL: a.cfg.DiscordCallbackURL,
 		Actions: []hubnotify.NotifyAction{
-			{ID: discordActionSnooze10m, Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary},
-			{ID: discordActionSnooze30m, Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
-			{ID: discordActionAcknowledge, Label: "Acknowledge", Style: hubnotify.ActionStyleSuccess},
+			{ID: scopedDiscordActionID(discordActionSnooze10m, goalSlug), Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary},
+			{ID: scopedDiscordActionID(discordActionSnooze30m, goalSlug), Label: "Snooze 30m", Style: hubnotify.ActionStyleSecondary},
+			{ID: scopedDiscordActionID(discordActionAcknowledge, goalSlug), Label: "Acknowledge", Style: hubnotify.ActionStyleSuccess},
 		},
 		AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
 		Visibility:            hubnotify.VisibilityPublic,
@@ -117,6 +123,10 @@ func (a *spokeApp) runGoalCycle(ctx context.Context, goalSlug string, nowUTC, no
 	a.log.Printf("sent reminder for goal %q day %s: %.3f/%.3f %s", goalSlug, snapshot.Daystamp, snapshot.TodayProgress, snapshot.RequiredProgress, snapshot.GoalUnits)
 
 	return nil
+}
+
+func scopedDiscordActionID(actionID string, goalSlug string) string {
+	return actionID + ":" + goalSlug
 }
 
 func configuredBedtimeLabel(cfg config) string {

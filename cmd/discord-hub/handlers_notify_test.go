@@ -356,7 +356,7 @@ func TestBuildNotifyMessageIncludesButtons(t *testing.T) {
 		Title:           hubnotify.CanonicalTitle("beeminder-spoke", "goal-reminder"),
 		Summary:         "Time to make progress.",
 		Fields:          []hubnotify.NotifyField{{Key: "Goal", Value: "study", Group: hubnotify.FieldGroupContext, Order: 10, Inline: false}},
-		Actions:         []hubnotify.NotifyAction{{ID: "snooze_10m", Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary}},
+		Actions:         []hubnotify.NotifyAction{{ID: "snooze_10m:study", Label: "Snooze 10m", Style: hubnotify.ActionStyleSecondary}},
 		AllowedMentions: hubnotify.AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false},
 		Visibility:      hubnotify.VisibilityPublic,
 		OccurredAt:      time.Date(2026, time.March, 10, 15, 0, 0, 0, time.UTC),
@@ -377,7 +377,7 @@ func TestBuildNotifyMessageIncludesButtons(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected component type: %#v", row.Components[0])
 	}
-	if button.CustomID != encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m") {
+	if button.CustomID != encodeNotifyActionCustomID("http://127.0.0.1:8092/callback", "beeminder-spoke", "goal-reminder", "snooze_10m:study") {
 		t.Fatalf("unexpected custom ID: %q", button.CustomID)
 	}
 }

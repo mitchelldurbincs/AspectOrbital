@@ -15,6 +15,7 @@ func TestHandleCommandRejectsMissingDiscordUserID(t *testing.T) {
 	app := newTestApp(testConfig())
 	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(`{"command":"status","context":{}}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-command-token")
 	rec := httptest.NewRecorder()
 
 	app.handleCommand(rec, req)
@@ -24,6 +25,19 @@ func TestHandleCommandRejectsMissingDiscordUserID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "context.discordUserId is required") {
 		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}
+
+func TestHandleCommandRejectsUnauthorizedRequest(t *testing.T) {
+	app := newTestApp(testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/control/command", strings.NewReader(`{"command":"status","context":{"discordUserId":"u-123"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	app.handleCommand(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 
@@ -71,7 +85,7 @@ func TestHandleDiscordCallbackSnoozesViaExistingCommand(t *testing.T) {
 		Event:    beeminderNotifyEvent,
 		Severity: hubnotify.SeverityWarning,
 		Action: hubnotify.ActionCallbackAction{
-			ID:    discordActionSnooze10m,
+			ID:    scopedDiscordActionID(discordActionSnooze10m, "study"),
 			Label: "Snooze 10m",
 			Style: hubnotify.ActionStyleSecondary,
 		},
@@ -91,7 +105,7 @@ func TestHandleDiscordCallbackSnoozesViaExistingCommand(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%q", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"status":"ok"`) || !strings.Contains(rec.Body.String(), `Snoozed reminders for 10m0s`) {
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) || !strings.Contains(rec.Body.String(), `Snoozed reminders for study for 10m`) {
 		t.Fatalf("unexpected callback response: %q", rec.Body.String())
 	}
 	status := app.engine.Status()
@@ -107,9 +121,32 @@ func TestHandleDiscordCallbackSnoozesViaExistingCommand(t *testing.T) {
 	}
 }
 
+func TestHandleDiscordCallbackOnlySnoozesTargetGoal(t *testing.T) {
+	app := newTestApp(testConfig())
+	app.cfg.BeeminderGoalSlugs = []string{"study", "writing"}
+	app.engine = newReminderEngine(app.cfg)
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"snooze_10m:study","label":"Snooze 10m","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-callback-token")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%q", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	status := app.engine.Status()
+	if status.Goals["study"].SnoozedUntil == nil {
+		t.Fatal("expected study goal to be snoozed")
+	}
+	if status.Goals["writing"].SnoozedUntil != nil {
+		t.Fatalf("expected writing goal to remain unsnoozed, got %#v", status.Goals["writing"])
+	}
+}
+
 func TestHandleDiscordCallbackRejectsUnknownAction(t *testing.T) {
 	app := newTestApp(testConfig())
-	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"nope","label":"Nope","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"nope:study","label":"Nope","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test-callback-token")
 	rec := httptest.NewRecorder()
@@ -124,9 +161,43 @@ func TestHandleDiscordCallbackRejectsUnknownAction(t *testing.T) {
 	}
 }
 
-func TestHandleDiscordCallbackRejectsUnauthorizedRequest(t *testing.T) {
+func TestHandleDiscordCallbackRejectsUnknownGoal(t *testing.T) {
+	app := newTestApp(testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"snooze_10m:missing","label":"Snooze 10m","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-callback-token")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), `unknown goal slug "missing"`) {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}
+
+func TestHandleDiscordCallbackRejectsMalformedScopedAction(t *testing.T) {
 	app := newTestApp(testConfig())
 	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"snooze_10m","label":"Snooze 10m","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-callback-token")
+	rec := httptest.NewRecorder()
+
+	app.handleDiscordCallback(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "action.id must include a goal slug") {
+		t.Fatalf("unexpected response body: %q", rec.Body.String())
+	}
+}
+
+func TestHandleDiscordCallbackRejectsUnauthorizedRequest(t *testing.T) {
+	app := newTestApp(testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/discord/callback", strings.NewReader(`{"version":2,"service":"beeminder-spoke","event":"goal-reminder","action":{"id":"snooze_10m:study","label":"Snooze 10m","style":"secondary"},"context":{"discordUserId":"u-123"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
