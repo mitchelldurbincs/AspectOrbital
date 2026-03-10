@@ -13,7 +13,6 @@ import (
 type commandRequest = spokecontract.CommandRequest
 type commandCatalogResponse = spokecontract.CommandCatalog
 type commandDefinition = spokecontract.CommandSpec
-type commandOptionDefinition = spokecontract.CommandOptionSpec
 
 func (a *financeApp) handleCommands(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
