@@ -52,11 +52,11 @@ func (s *Service) CommitWithPolicy(ctx context.Context, userID, task string, dea
 	if err != nil {
 		return Commitment{}, err
 	}
-	return s.GetByID(id)
+	return s.GetByID(ctx, id)
 }
 
-func (s *Service) GetByID(id int64) (Commitment, error) {
-	row := s.db.QueryRowContext(context.Background(), `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
+func (s *Service) GetByID(ctx context.Context, id int64) (Commitment, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
 	commitment, err := scanCommitment(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -67,8 +67,8 @@ func (s *Service) GetByID(id int64) (Commitment, error) {
 	return commitment, nil
 }
 
-func (s *Service) ActiveForUser(userID string) (Commitment, error) {
-	row := s.db.QueryRowContext(context.Background(), `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE user_id=? AND status='pending' LIMIT 1;`, userID)
+func (s *Service) ActiveForUser(ctx context.Context, userID string) (Commitment, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE user_id=? AND status='pending' LIMIT 1;`, userID)
 	commitment, err := scanCommitment(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -79,45 +79,45 @@ func (s *Service) ActiveForUser(userID string) (Commitment, error) {
 	return commitment, nil
 }
 
-func (s *Service) StatusForUser(_ context.Context, userID string) (Commitment, error) {
-	return s.ActiveForUser(userID)
+func (s *Service) StatusForUser(ctx context.Context, userID string) (Commitment, error) {
+	return s.ActiveForUser(ctx, userID)
 }
 
-func (s *Service) Cancel(_ context.Context, userID string) (Commitment, error) {
-	active, err := s.ActiveForUser(userID)
+func (s *Service) Cancel(ctx context.Context, userID string) (Commitment, error) {
+	active, err := s.ActiveForUser(ctx, userID)
 	if err != nil {
 		return Commitment{}, err
 	}
 	now := s.now()
-	_, err = s.db.ExecContext(context.Background(), `UPDATE commitments SET status='canceled',updated_at=? WHERE id=? AND status='pending';`, ts(now), active.ID)
+	_, err = s.db.ExecContext(ctx, `UPDATE commitments SET status='canceled',updated_at=? WHERE id=? AND status='pending';`, ts(now), active.ID)
 	if err != nil {
 		return Commitment{}, err
 	}
-	return s.GetByID(active.ID)
+	return s.GetByID(ctx, active.ID)
 }
 
-func (s *Service) Snooze(_ context.Context, userID string, duration, maxDuration time.Duration) (Commitment, error) {
+func (s *Service) Snooze(ctx context.Context, userID string, duration, maxDuration time.Duration) (Commitment, error) {
 	if duration <= 0 {
 		return Commitment{}, errors.New("snooze duration must be positive")
 	}
 	if maxDuration > 0 && duration > maxDuration {
 		return Commitment{}, fmt.Errorf("snooze duration cannot exceed %s", maxDuration)
 	}
-	active, err := s.ActiveForUser(userID)
+	active, err := s.ActiveForUser(ctx, userID)
 	if err != nil {
 		return Commitment{}, err
 	}
 	now := s.now()
 	snoozedUntil := now.Add(duration).UTC()
-	_, err = s.db.ExecContext(context.Background(), `UPDATE commitments SET snoozed_until=?,updated_at=? WHERE id=? AND status='pending';`, ts(snoozedUntil), ts(now), active.ID)
+	_, err = s.db.ExecContext(ctx, `UPDATE commitments SET snoozed_until=?,updated_at=? WHERE id=? AND status='pending';`, ts(snoozedUntil), ts(now), active.ID)
 	if err != nil {
 		return Commitment{}, err
 	}
-	return s.GetByID(active.ID)
+	return s.GetByID(ctx, active.ID)
 }
 
-func (s *Service) SubmitProof(_ context.Context, userID string, submission ProofSubmission) (Commitment, error) {
-	active, err := s.ActiveForUser(userID)
+func (s *Service) SubmitProof(ctx context.Context, userID string, submission ProofSubmission) (Commitment, error) {
+	active, err := s.ActiveForUser(ctx, userID)
 	if err != nil {
 		return Commitment{}, err
 	}
@@ -130,7 +130,7 @@ func (s *Service) SubmitProof(_ context.Context, userID string, submission Proof
 	if !active.Deadline.After(now) {
 		status = StatusFailed
 	}
-	result, err := s.db.ExecContext(context.Background(), `UPDATE commitments SET status=?,proof_metadata=?,snoozed_until='',updated_at=? WHERE id=? AND status='pending';`, string(status), string(meta), ts(now), active.ID)
+	result, err := s.db.ExecContext(ctx, `UPDATE commitments SET status=?,proof_metadata=?,snoozed_until='',updated_at=? WHERE id=? AND status='pending';`, string(status), string(meta), ts(now), active.ID)
 	if err != nil {
 		return Commitment{}, err
 	}
@@ -139,9 +139,9 @@ func (s *Service) SubmitProof(_ context.Context, userID string, submission Proof
 		return Commitment{}, err
 	}
 	if rowsAffected == 0 {
-		return s.GetByID(active.ID)
+		return s.GetByID(ctx, active.ID)
 	}
-	return s.GetByID(active.ID)
+	return s.GetByID(ctx, active.ID)
 }
 
 type commitmentScanner interface {

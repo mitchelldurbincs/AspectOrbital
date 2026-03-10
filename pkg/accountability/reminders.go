@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-func (s *Service) ExpireOverdue(_ context.Context) (int64, error) {
+func (s *Service) ExpireOverdue(ctx context.Context) (int64, error) {
 	now := s.now()
 	cutoff := now.Add(-s.expiryGrace)
-	rows, err := s.db.QueryContext(context.Background(), `SELECT id FROM commitments WHERE status='pending' AND deadline <= ?;`, ts(cutoff))
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM commitments WHERE status='pending' AND deadline <= ?;`, ts(cutoff))
 	if err != nil {
 		return 0, err
 	}
@@ -34,7 +34,7 @@ func (s *Service) ExpireOverdue(_ context.Context) (int64, error) {
 
 	var expired int64
 	for _, id := range ids {
-		if _, err := s.db.ExecContext(context.Background(), `UPDATE commitments SET status='failed',updated_at=? WHERE id=? AND status='pending';`, ts(now), id); err != nil {
+		if _, err := s.db.ExecContext(ctx, `UPDATE commitments SET status='failed',updated_at=? WHERE id=? AND status='pending';`, ts(now), id); err != nil {
 			return 0, err
 		}
 		expired++
@@ -42,7 +42,7 @@ func (s *Service) ExpireOverdue(_ context.Context) (int64, error) {
 	return expired, nil
 }
 
-func (s *Service) OverdueNeedingReminder(_ context.Context, reminderInterval time.Duration) ([]Commitment, error) {
+func (s *Service) OverdueNeedingReminder(ctx context.Context, reminderInterval time.Duration) ([]Commitment, error) {
 	if reminderInterval <= 0 {
 		return nil, errors.New("reminder interval must be positive")
 	}
@@ -53,7 +53,7 @@ func (s *Service) OverdueNeedingReminder(_ context.Context, reminderInterval tim
 	var err error
 	if s.expiryGrace > 0 {
 		rows, err = s.db.QueryContext(
-			context.Background(),
+			ctx,
 			`SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
 			 FROM commitments
 			 WHERE status='pending'
@@ -68,7 +68,7 @@ func (s *Service) OverdueNeedingReminder(_ context.Context, reminderInterval tim
 		)
 	} else {
 		rows, err = s.db.QueryContext(
-			context.Background(),
+			ctx,
 			`SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
 			 FROM commitments
 			 WHERE status='pending'
@@ -99,11 +99,11 @@ func (s *Service) OverdueNeedingReminder(_ context.Context, reminderInterval tim
 	return out, nil
 }
 
-func (s *Service) MarkReminderSent(_ context.Context, commitmentID int64) error {
+func (s *Service) MarkReminderSent(ctx context.Context, commitmentID int64) error {
 	if commitmentID <= 0 {
 		return errors.New("commitment id must be positive")
 	}
-	_, err := s.db.ExecContext(context.Background(), `UPDATE commitments SET last_reminder_at=? WHERE id=? AND status='pending';`, ts(s.now()), commitmentID)
+	_, err := s.db.ExecContext(ctx, `UPDATE commitments SET last_reminder_at=? WHERE id=? AND status='pending';`, ts(s.now()), commitmentID)
 	return err
 }
 
