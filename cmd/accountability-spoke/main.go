@@ -145,6 +145,15 @@ func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, servi
 		return err
 	}
 	for _, commitment := range commitments {
+		claimed, claimErr := service.ClaimReminder(ctx, commitment.ID, cfg.ReminderInterval)
+		if claimErr != nil {
+			logger.Printf("failed to claim reminder for commitment=%d: %v", commitment.ID, claimErr)
+			continue
+		}
+		if !claimed {
+			continue
+		}
+
 		message := formatReminderMessage(cfg, commitment)
 		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{
 			Version:       hubnotify.Version2,
@@ -172,9 +181,6 @@ func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, servi
 		if notifyErr != nil {
 			logger.Printf("failed reminder notify for commitment=%d user=%s: %v", commitment.ID, commitment.UserID, notifyErr)
 			continue
-		}
-		if markErr := service.MarkReminderSent(ctx, commitment.ID); markErr != nil {
-			logger.Printf("failed to mark reminder sent for commitment=%d: %v", commitment.ID, markErr)
 		}
 	}
 	return nil

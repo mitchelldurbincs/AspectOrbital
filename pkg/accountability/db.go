@@ -21,7 +21,6 @@ var bootstrapStatements = []string{
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id TEXT NOT NULL,
 		task TEXT NOT NULL,
-		goal_slug TEXT NOT NULL,
 		created_at TEXT NOT NULL,
 		deadline TEXT NOT NULL,
 		snoozed_until TEXT NOT NULL DEFAULT '',

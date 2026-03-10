@@ -79,6 +79,42 @@ func TestPolicyEvaluateTextReply(t *testing.T) {
 	}
 }
 
+func TestPolicyEvaluateManualAttachmentRequiresRealAttachment(t *testing.T) {
+	catalog := policyCatalog{}
+
+	evaluation, err := catalog.Evaluate(context.Background(), accountability.Commitment{PolicyEngine: "manual_attachment", PolicyConfig: `{}`}, accountability.AttachmentMetadata{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluation.Pass {
+		t.Fatal("expected empty attachment to fail")
+	}
+
+	evaluation, err = catalog.Evaluate(context.Background(), accountability.Commitment{PolicyEngine: "manual_attachment", PolicyConfig: `{}`}, accountability.AttachmentMetadata{ID: "a1"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluation.Pass {
+		t.Fatal("expected attachment with only id to fail")
+	}
+
+	evaluation, err = catalog.Evaluate(context.Background(), accountability.Commitment{PolicyEngine: "manual_attachment", PolicyConfig: `{}`}, accountability.AttachmentMetadata{ID: "a1", Filename: "proof.png"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !evaluation.Pass {
+		t.Fatalf("expected attachment with filename to pass, got %#v", evaluation)
+	}
+
+	evaluation, err = catalog.Evaluate(context.Background(), accountability.Commitment{PolicyEngine: "manual_attachment", PolicyConfig: `{}`}, accountability.AttachmentMetadata{ID: "a2", URL: "https://cdn.discordapp.com/proof.png"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !evaluation.Pass {
+		t.Fatalf("expected attachment with url to pass, got %#v", evaluation)
+	}
+}
+
 func TestLoadPolicyCatalogFailsWhenOpenAIPresetWithoutClient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policies.json")
 	content := `{"version":1,"defaultPreset":"car","presets":{"car":{"task":"Car check","engine":"openai_vision","engineConfig":{"prompt":"inside a car","minConfidence":0.8}}}}`

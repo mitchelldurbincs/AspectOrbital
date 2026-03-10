@@ -367,6 +367,55 @@ func TestMarkReminderSentThrottlesReminders(t *testing.T) {
 	}
 }
 
+func TestClaimReminderSucceedsOnce(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	commitment, err := svc.Commit(context.Background(), "u1", "gym", now.Add(1*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(3 * time.Minute) }
+	claimed, err := svc.ClaimReminder(context.Background(), commitment.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed {
+		t.Fatal("expected first claim to succeed")
+	}
+
+	claimed, err = svc.ClaimReminder(context.Background(), commitment.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("expected second claim to fail")
+	}
+}
+
+func TestClaimReminderRejectsIneligibleCommitment(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	commitment, err := svc.Commit(context.Background(), "u1", "gym", now.Add(30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := svc.ClaimReminder(context.Background(), commitment.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("expected claim to fail before deadline")
+	}
+}
+
 func TestExpireOverdueUsesGracePeriod(t *testing.T) {
 	db := testDB(t)
 	now := time.Now().UTC()

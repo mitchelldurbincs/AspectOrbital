@@ -69,6 +69,23 @@ func TestParseAttachmentSupportsContentTypeAliasesAndSize(t *testing.T) {
 	if attachment.ContentType != "image/jpeg" {
 		t.Fatalf("expected camelCase contentType fallback, got: %q", attachment.ContentType)
 	}
+
+	attachment = parseAttachment("definitely not an attachment")
+	if attachment != (accountability.AttachmentMetadata{}) {
+		t.Fatalf("expected scalar attachment payload to be ignored, got %#v", attachment)
+	}
+}
+
+func TestHandleCommandRejectsWrongMethod(t *testing.T) {
+	app := newTestSpokeApp(t)
+	req := httptest.NewRequest(http.MethodGet, "/control/command", nil)
+	rec := httptest.NewRecorder()
+
+	app.handleCommand(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
 }
 
 func TestHandleCommandCommitValidationErrorReturns400(t *testing.T) {
@@ -105,6 +122,22 @@ func TestHandleCommandProofNotFoundReturns404(t *testing.T) {
 		t.Fatalf("expected 404, got %d (%s)", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "no active commitment") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleCommandProofRejectsScalarAttachmentPayload(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.CommitWithPolicy(context.Background(), "u1", "gym", time.Now().UTC().Add(time.Hour), "default", policyEngineAttachment, `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := performCommandRequest(t, app, `{"command":"proof","context":{"discordUserId":"u1"},"options":{"proof":"sure, trust me"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "attachment proof") {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

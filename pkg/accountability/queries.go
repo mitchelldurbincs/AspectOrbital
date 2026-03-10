@@ -11,7 +11,6 @@ const baseCommitmentSelect = "SELECT " + commitmentColumns + " FROM " + commitme
 const insertCommitmentSQL = `INSERT INTO commitments(
 	user_id,
 	task,
-	goal_slug,
 	created_at,
 	deadline,
 	snoozed_until,
@@ -25,7 +24,7 @@ const insertCommitmentSQL = `INSERT INTO commitments(
 	policy_config,
 	status,
 	updated_at
-) VALUES(?, ?, '', ?, ?, '', '', '', '', '', 0, ?, ?, ?, 'pending', ?);`
+) VALUES(?, ?, ?, ?, '', '', '', '', '', 0, ?, ?, ?, 'pending', ?);`
 
 const updateCommitmentCanceledSQL = `UPDATE commitments SET status='canceled',updated_at=? WHERE id=? AND status='pending';`
 
@@ -36,6 +35,25 @@ const updateCommitmentCheckInSQL = `UPDATE commitments SET last_checkin_at=?,las
 const updateCommitmentProofSQL = `UPDATE commitments SET status=?,proof_metadata=?,snoozed_until='',updated_at=? WHERE id=? AND status='pending';`
 
 const updateCommitmentReminderSQL = `UPDATE commitments SET last_reminder_at=?,reminder_count=reminder_count+1 WHERE id=? AND status='pending';`
+
+const claimCommitmentReminderWithGraceSQL = `UPDATE commitments
+SET last_reminder_at=?, reminder_count=reminder_count+1
+WHERE id=?
+	AND status='pending'
+	AND deadline <= ?
+	AND deadline > ?
+	AND (snoozed_until='' OR snoozed_until <= ?)
+	AND (checkin_quiet_until='' OR checkin_quiet_until <= ?)
+	AND (last_reminder_at='' OR last_reminder_at <= ?);`
+
+const claimCommitmentReminderSQL = `UPDATE commitments
+SET last_reminder_at=?, reminder_count=reminder_count+1
+WHERE id=?
+	AND status='pending'
+	AND deadline <= ?
+	AND (snoozed_until='' OR snoozed_until <= ?)
+	AND (checkin_quiet_until='' OR checkin_quiet_until <= ?)
+	AND (last_reminder_at='' OR last_reminder_at <= ?);`
 
 const updateOverdueCommitmentsSQL = `UPDATE commitments SET status='failed',updated_at=? WHERE status='pending' AND deadline <= ?;`
 

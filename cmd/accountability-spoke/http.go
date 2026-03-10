@@ -45,6 +45,10 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req commandRequest
 	if err := decodeJSONBody(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -211,7 +215,7 @@ func parseAttachment(raw any) accountability.AttachmentMetadata {
 	if raw == nil {
 		return accountability.AttachmentMetadata{}
 	}
-	return accountability.AttachmentMetadata{ID: strings.TrimSpace(fmt.Sprint(raw))}
+	return accountability.AttachmentMetadata{}
 }
 
 func parseSnoozeDuration(raw string, defaultDuration time.Duration) (time.Duration, error) {

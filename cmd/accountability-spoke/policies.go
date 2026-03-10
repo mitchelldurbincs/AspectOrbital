@@ -180,6 +180,9 @@ func (c policyCatalog) Evaluate(ctx context.Context, commitment accountability.C
 		if strings.TrimSpace(attachment.ID) == "" {
 			return proofEvaluation{Pass: false, Reason: "this commitment requires an attachment proof"}, nil
 		}
+		if strings.TrimSpace(attachment.URL) == "" && strings.TrimSpace(attachment.Filename) == "" {
+			return proofEvaluation{Pass: false, Reason: "this commitment requires a real attachment with a filename or URL"}, nil
+		}
 		return proofEvaluation{Pass: true, Verdict: "manual_attachment:accepted"}, nil
 	case policyEngineTextReply:
 		minChars, err := intFromAny(normalized["minChars"])

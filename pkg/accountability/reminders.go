@@ -2,6 +2,7 @@ package accountability
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 )
@@ -73,6 +74,52 @@ func (s *Service) MarkReminderSent(ctx context.Context, commitmentID int64) erro
 	ctx = contextOrBackground(ctx)
 	_, err := s.db.ExecContext(ctx, updateCommitmentReminderSQL, ts(s.now()), commitmentID)
 	return err
+}
+
+func (s *Service) ClaimReminder(ctx context.Context, commitmentID int64, reminderInterval time.Duration) (bool, error) {
+	if commitmentID <= 0 {
+		return false, errors.New("commitment id must be positive")
+	}
+	ctx = contextOrBackground(ctx)
+	now := s.now()
+	earliestReminder := now.Add(-reminderInterval)
+
+	var (
+		result sql.Result
+		err    error
+	)
+	if s.expiryGrace > 0 {
+		result, err = s.db.ExecContext(
+			ctx,
+			claimCommitmentReminderWithGraceSQL,
+			ts(now),
+			commitmentID,
+			ts(now),
+			ts(now.Add(-s.expiryGrace)),
+			ts(now),
+			ts(now),
+			ts(earliestReminder),
+		)
+	} else {
+		result, err = s.db.ExecContext(
+			ctx,
+			claimCommitmentReminderSQL,
+			ts(now),
+			commitmentID,
+			ts(now),
+			ts(now),
+			ts(now),
+			ts(earliestReminder),
+		)
+	}
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rowsAffected == 1, nil
 }
 
 type commitmentRows interface {
