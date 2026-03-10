@@ -14,18 +14,22 @@ const (
 )
 
 type Commitment struct {
-	ID            int64     `json:"id"`
-	UserID        string    `json:"userId"`
-	Task          string    `json:"task"`
-	CreatedAt     time.Time `json:"createdAt"`
-	Deadline      time.Time `json:"deadline"`
-	SnoozedUntil  time.Time `json:"snoozedUntil,omitempty"`
-	PolicyPreset  string    `json:"policyPreset,omitempty"`
-	PolicyEngine  string    `json:"policyEngine,omitempty"`
-	PolicyConfig  string    `json:"policyConfig,omitempty"`
-	Status        Status    `json:"status"`
-	ProofMetadata string    `json:"proofMetadata,omitempty"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID                int64     `json:"id"`
+	UserID            string    `json:"userId"`
+	Task              string    `json:"task"`
+	CreatedAt         time.Time `json:"createdAt"`
+	Deadline          time.Time `json:"deadline"`
+	SnoozedUntil      time.Time `json:"snoozedUntil,omitempty"`
+	LastCheckInAt     time.Time `json:"lastCheckInAt,omitempty"`
+	LastCheckInText   string    `json:"lastCheckInText,omitempty"`
+	CheckInQuietUntil time.Time `json:"checkInQuietUntil,omitempty"`
+	ReminderCount     int       `json:"reminderCount,omitempty"`
+	PolicyPreset      string    `json:"policyPreset,omitempty"`
+	PolicyEngine      string    `json:"policyEngine,omitempty"`
+	PolicyConfig      string    `json:"policyConfig,omitempty"`
+	Status            Status    `json:"status"`
+	ProofMetadata     string    `json:"proofMetadata,omitempty"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 type AttachmentMetadata struct {

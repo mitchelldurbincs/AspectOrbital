@@ -134,13 +134,34 @@ func startReminderLoop(ctx context.Context, logger *log.Logger, cfg config, serv
 }
 
 func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, service *accountability.Service, hub *hubnotify.Client) error {
+	const notifyService = "accountability-spoke"
+	const notifyEvent = "commitment-reminder"
+
 	commitments, err := service.OverdueNeedingReminder(ctx, cfg.ReminderInterval)
 	if err != nil {
 		return err
 	}
 	for _, commitment := range commitments {
-		message := fmt.Sprintf("<@%s> Reminder: %q was due at %s. Submit /%s with proof or /%s to delay.", commitment.UserID, commitment.Task, commitment.Deadline.Format(time.RFC3339), cfg.ProofCommandName, cfg.SnoozeCommandName)
-		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{TargetChannel: cfg.NotifyChannel, Message: message, Severity: cfg.NotifySeverity})
+		message := formatReminderMessage(cfg, commitment)
+		notifyErr := hub.Notify(ctx, hubnotify.NotifyRequest{
+			Version:       hubnotify.Version2,
+			TargetChannel: cfg.NotifyChannel,
+			Service:       notifyService,
+			Event:         notifyEvent,
+			Severity:      cfg.NotifySeverity,
+			Title:         hubnotify.CanonicalTitle(notifyService, notifyEvent),
+			Summary:       message,
+			Fields: []hubnotify.NotifyField{
+				{Key: "Task", Value: commitment.Task, Group: hubnotify.FieldGroupContext, Order: 10, Inline: false},
+				{Key: "User", Value: commitment.UserID, Group: hubnotify.FieldGroupContext, Order: 20, Inline: true},
+				{Key: "Deadline", Value: commitment.Deadline.UTC().Format(time.RFC3339), Group: hubnotify.FieldGroupTiming, Order: 30, Inline: true},
+			},
+			Actions:               []hubnotify.NotifyAction{},
+			AllowedMentions:       hubnotify.AllowedMentions{Parse: []string{}, Users: []string{commitment.UserID}, Roles: []string{}, RepliedUser: false},
+			Visibility:            hubnotify.VisibilityPublic,
+			SuppressNotifications: false,
+			OccurredAt:            time.Now().UTC(),
+		})
 		if notifyErr != nil {
 			logger.Printf("failed reminder notify for commitment=%d user=%s: %v", commitment.ID, commitment.UserID, notifyErr)
 			continue
@@ -150,6 +171,22 @@ func runReminderSweep(ctx context.Context, logger *log.Logger, cfg config, servi
 		}
 	}
 	return nil
+}
+
+func formatReminderMessage(cfg config, commitment accountability.Commitment) string {
+	base := fmt.Sprintf("<@%s> %q was due at %s.", commitment.UserID, commitment.Task, commitment.Deadline.Format(time.RFC3339))
+	if !commitment.LastCheckInAt.IsZero() && strings.TrimSpace(commitment.LastCheckInText) != "" {
+		base = fmt.Sprintf("%s Last check-in: %q at %s.", base, commitment.LastCheckInText, commitment.LastCheckInAt.Format(time.RFC3339))
+	}
+
+	switch {
+	case commitment.ReminderCount <= 0:
+		return fmt.Sprintf("%s Check in with /%s if you're moving, send /%s when done, or /%s to delay reminders.", base, cfg.CheckInCommandName, cfg.ProofCommandName, cfg.SnoozeCommandName)
+	case commitment.ReminderCount == 1:
+		return fmt.Sprintf("%s You still have not finished it. Send /%s when done, or /%s if you're moving now.", base, cfg.ProofCommandName, cfg.CheckInCommandName)
+	default:
+		return fmt.Sprintf("%s This is at risk of being missed. Send /%s now if finished.", base, cfg.ProofCommandName)
+	}
 }
 
 func warnOnKnownSpokePortCollisions(logger *log.Logger) {

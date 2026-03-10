@@ -35,11 +35,12 @@ func (a *spokeApp) handleCommands(w http.ResponseWriter, _ *http.Request) {
 		Commands: []commandDefinition{
 			{Name: a.cfg.CommitCommandName, Description: "Commit to a task with a deadline", Options: []commandOptionDefinition{{Name: "deadline", Type: "string", Description: "RFC3339 timestamp or duration like 2h", Required: true}, {Name: "task", Type: "string", Description: "Task description override", Required: false}, {Name: "preset", Type: "string", Description: "Policy preset name override", Required: false}}},
 			{Name: a.cfg.ProofCommandName, Description: "Submit proof for your active commitment", Options: []commandOptionDefinition{{Name: "proof", Type: "attachment", Description: "Proof attachment", Required: false}, {Name: "text", Type: "string", Description: "Proof text reply", Required: false}}},
+			{Name: a.cfg.CheckInCommandName, Description: "Record that you are actively working on your commitment", Options: []commandOptionDefinition{{Name: "text", Type: "string", Description: "Short progress note like getting ready", Required: true}}},
 			{Name: a.cfg.SnoozeCommandName, Description: "Snooze reminders for your active commitment", Options: []commandOptionDefinition{{Name: "duration", Type: "string", Description: "Duration like 10m", Required: false}}},
 			{Name: a.cfg.StatusCommandName, Description: "Show your active commitment"},
 			{Name: a.cfg.CancelCommandName, Description: "Cancel your active commitment"},
 		},
-		Names: []string{a.cfg.CancelCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName},
+		Names: []string{a.cfg.CancelCommandName, a.cfg.CheckInCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName},
 	})
 }
 
@@ -108,6 +109,13 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 			message = "Commitment missed deadline before proof was submitted."
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
+	case a.cfg.CheckInCommandName:
+		commitment, err := a.service.CheckIn(r.Context(), userID, mapOptionString(req.Options, "text"), a.cfg.CheckInQuietPeriod)
+		if err != nil {
+			writeAccountabilityError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, fmt.Sprintf("Check-in recorded. Reminders paused until %s", commitment.CheckInQuietUntil.Format(time.RFC3339)), commitment))
 	case a.cfg.StatusCommandName:
 		commitment, err := a.service.StatusForUser(r.Context(), userID)
 		if err != nil {
@@ -124,6 +132,12 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		if !commitment.SnoozedUntil.IsZero() && commitment.SnoozedUntil.After(now) {
 			message = fmt.Sprintf("%s; reminders snoozed until %s", message, commitment.SnoozedUntil.Format(time.RFC3339))
+		}
+		if !commitment.CheckInQuietUntil.IsZero() && commitment.CheckInQuietUntil.After(now) {
+			message = fmt.Sprintf("%s; checked in until %s", message, commitment.CheckInQuietUntil.Format(time.RFC3339))
+		}
+		if !commitment.LastCheckInAt.IsZero() && commitment.LastCheckInText != "" {
+			message = fmt.Sprintf("%s; last check-in %q at %s", message, commitment.LastCheckInText, commitment.LastCheckInAt.Format(time.RFC3339))
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, message, commitment))
 	case a.cfg.SnoozeCommandName:
@@ -146,7 +160,7 @@ func (a *spokeApp) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, spokecontrol.OK(cmd, "Commitment canceled.", commitment))
 	default:
-		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{a.cfg.CancelCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName}), http.StatusBadRequest)
+		http.Error(w, spokecontrol.UnknownCommandError(req.Command, []string{a.cfg.CancelCommandName, a.cfg.CheckInCommandName, a.cfg.CommitCommandName, a.cfg.ProofCommandName, a.cfg.SnoozeCommandName, a.cfg.StatusCommandName}), http.StatusBadRequest)
 	}
 }
 

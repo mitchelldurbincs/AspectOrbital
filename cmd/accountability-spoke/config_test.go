@@ -15,6 +15,7 @@ func clearAccountabilityEnv(t *testing.T) {
 		"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL",
 		"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD",
 		"ACCOUNTABILITY_REMINDER_INTERVAL",
+		"ACCOUNTABILITY_CHECKIN_QUIET_PERIOD",
 		"HUB_NOTIFY_URL",
 		"HUB_NOTIFY_AUTH_TOKEN",
 		"ACCOUNTABILITY_NOTIFY_CHANNEL",
@@ -27,6 +28,7 @@ func clearAccountabilityEnv(t *testing.T) {
 		"ACCOUNTABILITY_COMMAND_STATUS",
 		"ACCOUNTABILITY_COMMAND_CANCEL",
 		"ACCOUNTABILITY_COMMAND_SNOOZE",
+		"ACCOUNTABILITY_COMMAND_CHECKIN",
 	}
 
 	for _, key := range keys {
@@ -44,6 +46,7 @@ func setAccountabilityRequiredEnv(t *testing.T) {
 	t.Setenv("ACCOUNTABILITY_EXPIRY_POLL_INTERVAL", "45s")
 	t.Setenv("ACCOUNTABILITY_EXPIRY_GRACE_PERIOD", "12h")
 	t.Setenv("ACCOUNTABILITY_REMINDER_INTERVAL", "5m")
+	t.Setenv("ACCOUNTABILITY_CHECKIN_QUIET_PERIOD", "10m")
 	t.Setenv("HUB_NOTIFY_URL", "http://127.0.0.1:8080/notify")
 	t.Setenv("HUB_NOTIFY_AUTH_TOKEN", "test-notify-token")
 	t.Setenv("ACCOUNTABILITY_NOTIFY_CHANNEL", "accountability")
@@ -56,6 +59,7 @@ func setAccountabilityRequiredEnv(t *testing.T) {
 	t.Setenv("ACCOUNTABILITY_COMMAND_STATUS", "status")
 	t.Setenv("ACCOUNTABILITY_COMMAND_CANCEL", "cancel")
 	t.Setenv("ACCOUNTABILITY_COMMAND_SNOOZE", "a-snooze")
+	t.Setenv("ACCOUNTABILITY_COMMAND_CHECKIN", "checkin")
 }
 
 func TestLoadConfigRequiresHTTPAddr(t *testing.T) {
@@ -97,6 +101,20 @@ func TestLoadConfigRejectsDefaultSnoozeAboveMax(t *testing.T) {
 		t.Fatal("expected error when ACCOUNTABILITY_DEFAULT_SNOOZE exceeds ACCOUNTABILITY_MAX_SNOOZE")
 	}
 	if !strings.Contains(err.Error(), "ACCOUNTABILITY_DEFAULT_SNOOZE cannot exceed ACCOUNTABILITY_MAX_SNOOZE") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigRejectsNonPositiveCheckInQuietPeriod(t *testing.T) {
+	clearAccountabilityEnv(t)
+	setAccountabilityRequiredEnv(t)
+	t.Setenv("ACCOUNTABILITY_CHECKIN_QUIET_PERIOD", "0s")
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error for non-positive ACCOUNTABILITY_CHECKIN_QUIET_PERIOD")
+	}
+	if !strings.Contains(err.Error(), "ACCOUNTABILITY_CHECKIN_QUIET_PERIOD must be positive") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -22,13 +22,16 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 
 - `/commit` — commit to a task with a deadline.
   - options:
-    - `deadline` (string, required; RFC3339, unix seconds, or duration)
+    - `deadline` (string, required; RFC3339, unix seconds, duration, or clock time like `4:30am`)
     - `task` (string, optional; defaults from preset)
     - `preset` (string, optional; defaults to global defaultPreset)
 - `/proof` — submit proof for your active commitment.
   - options:
     - `proof` (attachment, optional)
     - `text` (string, optional)
+- `/checkin` — record that you're actively working on your commitment.
+  - options:
+    - `text` (string, required)
 - `/a-snooze` — snooze reminders for your active commitment.
   - option: `duration` (string, optional; example `10m`)
 - `/accountability-status` — show your active commitment.
@@ -42,3 +45,11 @@ Default command names (all configurable via `ACCOUNTABILITY_COMMAND_*` env vars)
 
 - `/kalshi-status` — show monitor runtime state and persisted trigger state.
 - `/kalshi-positions` — show YES/NO contract exposure with market titles and tickers.
+- `/kalshi-rules` — show tracked markets in trigger-enabled vs observe-only mode.
+- `/kalshi-rule-set` — set a YES bid crossing rule for a ticker.
+  - options:
+    - `ticker` (string, required)
+    - `threshold_dollars` (number, required; between 0 and 1)
+- `/kalshi-rule-remove` — remove a ticker rule and return to observe-only mode.
+  - options:
+    - `ticker` (string, required)

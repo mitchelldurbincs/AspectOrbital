@@ -201,6 +201,88 @@ func TestSubmitProofReturnsNotFoundAfterExpiry(t *testing.T) {
 	}
 }
 
+func TestCheckInRecordsProgressBeforeDeadline(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitment, err := svc.CheckIn(context.Background(), "u1", "getting ready", 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commitment.Status != StatusPending {
+		t.Fatalf("expected pending, got %s", commitment.Status)
+	}
+	if commitment.LastCheckInText != "getting ready" {
+		t.Fatalf("unexpected check-in text: %q", commitment.LastCheckInText)
+	}
+	if commitment.LastCheckInAt.IsZero() {
+		t.Fatal("expected last_checkin_at to be populated")
+	}
+	if commitment.CheckInQuietUntil.IsZero() {
+		t.Fatal("expected checkin_quiet_until to be populated")
+	}
+}
+
+func TestCheckInRejectedAfterDeadline(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	_, err = svc.CheckIn(context.Background(), "u1", "getting ready", 10*time.Minute)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected ErrInvalid, got %v", err)
+	}
+}
+
+func TestCheckInSuppressesReminderUntilQuietPeriodExpires(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+	svc := testService(t, db, time.Minute, 12*time.Hour)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.Commit(context.Background(), "u1", "gym", now.Add(30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(20 * time.Minute) }
+	if _, err := svc.CheckIn(context.Background(), "u1", "getting ready", 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.now = func() time.Time { return now.Add(29 * time.Minute) }
+	reminders, err := svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 0 {
+		t.Fatalf("expected no reminders during quiet period, got %d", len(reminders))
+	}
+
+	svc.now = func() time.Time { return now.Add(31 * time.Minute) }
+	reminders, err = svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reminders) != 1 {
+		t.Fatalf("expected one reminder after quiet period, got %d", len(reminders))
+	}
+}
+
 func TestSnoozeHidesReminderUntilElapsed(t *testing.T) {
 	db := testDB(t)
 	now := time.Now().UTC()
@@ -266,6 +348,14 @@ func TestMarkReminderSentThrottlesReminders(t *testing.T) {
 
 	if err := svc.MarkReminderSent(context.Background(), reminders[0].ID); err != nil {
 		t.Fatal(err)
+	}
+
+	updated, err := svc.GetByID(context.Background(), reminders[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ReminderCount != 1 {
+		t.Fatalf("expected reminder count to increment, got %d", updated.ReminderCount)
 	}
 
 	reminders, err = svc.OverdueNeedingReminder(context.Background(), 5*time.Minute)

@@ -8,6 +8,7 @@ It can also send overdue reminder pings to `discord-hub` and lets you snooze rem
 - Exposes slash-command metadata and execution endpoints for `discord-hub`.
 - Tracks one active commitment per user in SQLite.
 - Sends overdue reminders via `discord-hub /notify`.
+- Supports lightweight `/checkin` progress pings before the deadline.
 - Supports snoozing reminders with `/a-snooze`.
 - Applies proof policies from `policies.json` (including optional `openai_vision`).
 
@@ -25,6 +26,7 @@ Default command names are configurable with `ACCOUNTABILITY_COMMAND_*` env vars.
 
 - `/commit deadline:"..." [task:"..."] [preset:"..."]`
 - `/proof [proof:<attachment>] [text:"..."]`
+- `/checkin text:"..."`
 - `/accountability-status`
 - `/cancel`
 - `/a-snooze [duration:"10m"]`

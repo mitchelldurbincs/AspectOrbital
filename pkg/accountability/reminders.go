@@ -30,27 +30,31 @@ func (s *Service) OverdueNeedingReminder(ctx context.Context, reminderInterval t
 	if s.expiryGrace > 0 {
 		rows, err = s.db.QueryContext(
 			ctx,
-			`SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
+			`SELECT id,user_id,task,created_at,deadline,snoozed_until,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
 			 FROM commitments
 			 WHERE status='pending'
 			 AND deadline <= ?
 			 AND deadline > ?
 			 AND (snoozed_until='' OR snoozed_until <= ?)
+			 AND (checkin_quiet_until='' OR checkin_quiet_until <= ?)
 			 AND (last_reminder_at='' OR last_reminder_at <= ?);`,
 			ts(now),
 			ts(now.Add(-s.expiryGrace)),
+			ts(now),
 			ts(now),
 			ts(earliestReminder),
 		)
 	} else {
 		rows, err = s.db.QueryContext(
 			ctx,
-			`SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
+			`SELECT id,user_id,task,created_at,deadline,snoozed_until,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at
 			 FROM commitments
 			 WHERE status='pending'
 			 AND deadline <= ?
 			 AND (snoozed_until='' OR snoozed_until <= ?)
+			 AND (checkin_quiet_until='' OR checkin_quiet_until <= ?)
 			 AND (last_reminder_at='' OR last_reminder_at <= ?);`,
+			ts(now),
 			ts(now),
 			ts(now),
 			ts(earliestReminder),
@@ -80,7 +84,7 @@ func (s *Service) MarkReminderSent(ctx context.Context, commitmentID int64) erro
 		return errors.New("commitment id must be positive")
 	}
 	ctx = contextOrBackground(ctx)
-	_, err := s.db.ExecContext(ctx, `UPDATE commitments SET last_reminder_at=? WHERE id=? AND status='pending';`, ts(s.now()), commitmentID)
+	_, err := s.db.ExecContext(ctx, `UPDATE commitments SET last_reminder_at=?,reminder_count=reminder_count+1 WHERE id=? AND status='pending';`, ts(s.now()), commitmentID)
 	return err
 }
 

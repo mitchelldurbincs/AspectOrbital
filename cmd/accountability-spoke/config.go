@@ -17,6 +17,7 @@ type config struct {
 	ExpiryPollInterval time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_POLL_INTERVAL" required:"true"`
 	ExpiryGracePeriod  time.Duration `envconfig:"ACCOUNTABILITY_EXPIRY_GRACE_PERIOD" required:"true"`
 	ReminderInterval   time.Duration `envconfig:"ACCOUNTABILITY_REMINDER_INTERVAL" required:"true"`
+	CheckInQuietPeriod time.Duration `envconfig:"ACCOUNTABILITY_CHECKIN_QUIET_PERIOD" required:"true"`
 	HubNotifyURL       string        `envconfig:"HUB_NOTIFY_URL" required:"true"`
 	HubNotifyAuthToken string        `envconfig:"HUB_NOTIFY_AUTH_TOKEN" required:"true"`
 	NotifyChannel      string        `envconfig:"ACCOUNTABILITY_NOTIFY_CHANNEL" required:"true"`
@@ -29,17 +30,19 @@ type config struct {
 	DefaultSnooze      time.Duration `envconfig:"ACCOUNTABILITY_DEFAULT_SNOOZE" required:"true"`
 	MaxSnooze          time.Duration `envconfig:"ACCOUNTABILITY_MAX_SNOOZE" required:"true"`
 
-	CommitCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_COMMIT" required:"true"`
-	ProofCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_PROOF" required:"true"`
-	StatusCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_STATUS" required:"true"`
-	CancelCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_CANCEL" required:"true"`
-	SnoozeCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_SNOOZE" required:"true"`
+	CommitCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_COMMIT" required:"true"`
+	ProofCommandNameRaw   string `envconfig:"ACCOUNTABILITY_COMMAND_PROOF" required:"true"`
+	StatusCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_STATUS" required:"true"`
+	CancelCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_CANCEL" required:"true"`
+	SnoozeCommandNameRaw  string `envconfig:"ACCOUNTABILITY_COMMAND_SNOOZE" required:"true"`
+	CheckInCommandNameRaw string `envconfig:"ACCOUNTABILITY_COMMAND_CHECKIN" required:"true"`
 
-	CommitCommandName string `ignored:"true"`
-	ProofCommandName  string `ignored:"true"`
-	StatusCommandName string `ignored:"true"`
-	CancelCommandName string `ignored:"true"`
-	SnoozeCommandName string `ignored:"true"`
+	CommitCommandName  string `ignored:"true"`
+	ProofCommandName   string `ignored:"true"`
+	StatusCommandName  string `ignored:"true"`
+	CancelCommandName  string `ignored:"true"`
+	SnoozeCommandName  string `ignored:"true"`
+	CheckInCommandName string `ignored:"true"`
 }
 
 func loadConfig() (config, error) {
@@ -61,6 +64,7 @@ func loadConfig() (config, error) {
 		"ACCOUNTABILITY_COMMAND_STATUS":  cfg.StatusCommandNameRaw,
 		"ACCOUNTABILITY_COMMAND_CANCEL":  cfg.CancelCommandNameRaw,
 		"ACCOUNTABILITY_COMMAND_SNOOZE":  cfg.SnoozeCommandNameRaw,
+		"ACCOUNTABILITY_COMMAND_CHECKIN": cfg.CheckInCommandNameRaw,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return config{}, errors.New(key + " is required")
@@ -77,12 +81,14 @@ func loadConfig() (config, error) {
 	cfg.StatusCommandName = spokecontract.NormalizeCommandName(cfg.StatusCommandNameRaw)
 	cfg.CancelCommandName = spokecontract.NormalizeCommandName(cfg.CancelCommandNameRaw)
 	cfg.SnoozeCommandName = spokecontract.NormalizeCommandName(cfg.SnoozeCommandNameRaw)
+	cfg.CheckInCommandName = spokecontract.NormalizeCommandName(cfg.CheckInCommandNameRaw)
 	if err := validateCommandNames(map[string]string{
-		"ACCOUNTABILITY_COMMAND_COMMIT": cfg.CommitCommandName,
-		"ACCOUNTABILITY_COMMAND_PROOF":  cfg.ProofCommandName,
-		"ACCOUNTABILITY_COMMAND_STATUS": cfg.StatusCommandName,
-		"ACCOUNTABILITY_COMMAND_CANCEL": cfg.CancelCommandName,
-		"ACCOUNTABILITY_COMMAND_SNOOZE": cfg.SnoozeCommandName,
+		"ACCOUNTABILITY_COMMAND_COMMIT":  cfg.CommitCommandName,
+		"ACCOUNTABILITY_COMMAND_PROOF":   cfg.ProofCommandName,
+		"ACCOUNTABILITY_COMMAND_STATUS":  cfg.StatusCommandName,
+		"ACCOUNTABILITY_COMMAND_CANCEL":  cfg.CancelCommandName,
+		"ACCOUNTABILITY_COMMAND_SNOOZE":  cfg.SnoozeCommandName,
+		"ACCOUNTABILITY_COMMAND_CHECKIN": cfg.CheckInCommandName,
 	}); err != nil {
 		return config{}, err
 	}
@@ -95,6 +101,9 @@ func loadConfig() (config, error) {
 	}
 	if cfg.ReminderInterval <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_REMINDER_INTERVAL must be positive")
+	}
+	if cfg.CheckInQuietPeriod <= 0 {
+		return config{}, errors.New("ACCOUNTABILITY_CHECKIN_QUIET_PERIOD must be positive")
 	}
 	if cfg.DefaultSnooze <= 0 {
 		return config{}, errors.New("ACCOUNTABILITY_DEFAULT_SNOOZE must be positive")

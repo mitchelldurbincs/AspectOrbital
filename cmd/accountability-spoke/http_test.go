@@ -106,6 +106,38 @@ func TestHandleCommandProofNotFoundReturns404(t *testing.T) {
 	}
 }
 
+func TestHandleCommandCheckInRequiresText(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.Commit(context.Background(), "u1", "gym", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := performCommandRequest(t, app, `{"command":"checkin","context":{"discordUserId":"u1"},"options":{"text":"   "}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "check-in text is required") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestHandleCommandCheckInReturnsQuietUntil(t *testing.T) {
+	app := newTestSpokeApp(t)
+	_, err := app.service.Commit(context.Background(), "u1", "gym", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := performCommandRequest(t, app, `{"command":"checkin","context":{"discordUserId":"u1"},"options":{"text":"getting ready"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Check-in recorded") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
 func TestHandleCommandCommitDatabaseFailureReturns500(t *testing.T) {
 	app := newTestSpokeApp(t)
 	if err := app.serviceDB.Close(); err != nil {
@@ -148,13 +180,15 @@ func newTestSpokeApp(t *testing.T) *testSpokeApp {
 	return &testSpokeApp{
 		spokeApp: &spokeApp{
 			cfg: config{
-				CommitCommandName: "commit",
-				ProofCommandName:  "proof",
-				StatusCommandName: "status",
-				CancelCommandName: "cancel",
-				SnoozeCommandName: "snooze",
-				DefaultSnooze:     10 * time.Minute,
-				MaxSnooze:         time.Hour,
+				CommitCommandName:  "commit",
+				ProofCommandName:   "proof",
+				CheckInCommandName: "checkin",
+				StatusCommandName:  "status",
+				CancelCommandName:  "cancel",
+				SnoozeCommandName:  "snooze",
+				CheckInQuietPeriod: 10 * time.Minute,
+				DefaultSnooze:      10 * time.Minute,
+				MaxSnooze:          time.Hour,
 			},
 			service: service,
 			policies: policyCatalog{

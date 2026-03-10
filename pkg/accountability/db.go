@@ -39,7 +39,7 @@ func Bootstrap(ctx context.Context, db *sql.DB) error {
 		return errors.New("db is required")
 	}
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS commitments (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,task TEXT NOT NULL,goal_slug TEXT NOT NULL,created_at TEXT NOT NULL,deadline TEXT NOT NULL,snoozed_until TEXT NOT NULL DEFAULT '',last_reminder_at TEXT NOT NULL DEFAULT '',policy_preset TEXT NOT NULL DEFAULT '',policy_engine TEXT NOT NULL DEFAULT '',policy_config TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL,proof_metadata TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS commitments (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,task TEXT NOT NULL,goal_slug TEXT NOT NULL,created_at TEXT NOT NULL,deadline TEXT NOT NULL,snoozed_until TEXT NOT NULL DEFAULT '',last_reminder_at TEXT NOT NULL DEFAULT '',last_checkin_at TEXT NOT NULL DEFAULT '',last_checkin_text TEXT NOT NULL DEFAULT '',checkin_quiet_until TEXT NOT NULL DEFAULT '',reminder_count INTEGER NOT NULL DEFAULT 0,policy_preset TEXT NOT NULL DEFAULT '',policy_engine TEXT NOT NULL DEFAULT '',policy_config TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL,proof_metadata TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL);`,
 		`CREATE INDEX IF NOT EXISTS idx_commitments_user_status ON commitments(user_id, status);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_commitments_active_one_per_user ON commitments(user_id) WHERE status = 'pending';`,
 	}
@@ -61,6 +61,18 @@ func Bootstrap(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if err := ensureCommitmentColumn(ctx, db, "policy_config", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	if err := ensureCommitmentColumn(ctx, db, "last_checkin_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureCommitmentColumn(ctx, db, "last_checkin_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureCommitmentColumn(ctx, db, "checkin_quiet_until", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureCommitmentColumn(ctx, db, "reminder_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	return nil

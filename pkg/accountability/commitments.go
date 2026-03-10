@@ -32,8 +32,8 @@ func (s *Service) CommitWithPolicy(ctx context.Context, userID, task string, dea
 
 	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO commitments(user_id,task,goal_slug,created_at,deadline,snoozed_until,last_reminder_at,policy_preset,policy_engine,policy_config,status,updated_at)
-		 VALUES(?, ?, '', ?, ?, '', '', ?, ?, ?, 'pending', ?);`,
+		`INSERT INTO commitments(user_id,task,goal_slug,created_at,deadline,snoozed_until,last_reminder_at,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,updated_at)
+		 VALUES(?, ?, '', ?, ?, '', '', '', '', '', 0, ?, ?, ?, 'pending', ?);`,
 		userID,
 		task,
 		ts(now),
@@ -57,7 +57,7 @@ func (s *Service) CommitWithPolicy(ctx context.Context, userID, task string, dea
 }
 
 func (s *Service) GetByID(ctx context.Context, id int64) (Commitment, error) {
-	row := s.db.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
+	row := s.db.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
 	commitment, err := scanCommitment(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -73,7 +73,7 @@ func (s *Service) ActiveForUser(ctx context.Context, userID string) (Commitment,
 }
 
 func activeCommitmentForUser(ctx context.Context, querier commitmentQuerier, userID string) (Commitment, error) {
-	row := querier.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE user_id=? AND status='pending' LIMIT 1;`, userID)
+	row := querier.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE user_id=? AND status='pending' LIMIT 1;`, userID)
 	commitment, err := scanCommitment(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -106,6 +106,24 @@ func (s *Service) Snooze(ctx context.Context, userID string, duration, maxDurati
 	return s.mutatePendingCommitment(ctx, userID, func(tx *sql.Tx, active Commitment, now time.Time) error {
 		snoozedUntil := now.Add(duration).UTC()
 		return ensureMutationApplied(tx.ExecContext(ctx, `UPDATE commitments SET snoozed_until=?,updated_at=? WHERE id=? AND status='pending';`, ts(snoozedUntil), ts(now), active.ID))
+	})
+}
+
+func (s *Service) CheckIn(ctx context.Context, userID, text string, quietPeriod time.Duration) (Commitment, error) {
+	ctx = contextOrBackground(ctx)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return Commitment{}, invalidError("check-in text is required")
+	}
+	if quietPeriod <= 0 {
+		return Commitment{}, invalidError("check-in quiet period must be positive")
+	}
+	return s.mutatePendingCommitment(ctx, userID, func(tx *sql.Tx, active Commitment, now time.Time) error {
+		if !active.Deadline.After(now) {
+			return invalidError("check-in is only allowed before the deadline")
+		}
+		quietUntil := now.Add(quietPeriod).UTC()
+		return ensureMutationApplied(tx.ExecContext(ctx, `UPDATE commitments SET last_checkin_at=?,last_checkin_text=?,checkin_quiet_until=?,updated_at=? WHERE id=? AND status='pending';`, ts(now), text, ts(quietUntil), ts(now), active.ID))
 	})
 }
 
@@ -166,7 +184,7 @@ func ensureMutationApplied(result sql.Result, err error) error {
 }
 
 func getCommitmentByID(ctx context.Context, querier commitmentQuerier, id int64) (Commitment, error) {
-	row := querier.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
+	row := querier.QueryRowContext(contextOrBackground(ctx), `SELECT id,user_id,task,created_at,deadline,snoozed_until,last_checkin_at,last_checkin_text,checkin_quiet_until,reminder_count,policy_preset,policy_engine,policy_config,status,proof_metadata,updated_at FROM commitments WHERE id=? LIMIT 1;`, id)
 	commitment, err := scanCommitment(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -193,7 +211,10 @@ func scanCommitment(scanner commitmentScanner) (Commitment, error) {
 	var createdAtRaw string
 	var deadlineRaw string
 	var snoozedUntilRaw string
+	var lastCheckInAtRaw string
+	var checkInQuietUntilRaw string
 	var policyConfigRaw string
+	var reminderCount int
 	var statusRaw string
 	var updatedAtRaw string
 
@@ -204,6 +225,10 @@ func scanCommitment(scanner commitmentScanner) (Commitment, error) {
 		&createdAtRaw,
 		&deadlineRaw,
 		&snoozedUntilRaw,
+		&lastCheckInAtRaw,
+		&commitment.LastCheckInText,
+		&checkInQuietUntilRaw,
+		&reminderCount,
 		&commitment.PolicyPreset,
 		&commitment.PolicyEngine,
 		&policyConfigRaw,
@@ -218,10 +243,13 @@ func scanCommitment(scanner commitmentScanner) (Commitment, error) {
 		policyConfigRaw = "{}"
 	}
 	commitment.PolicyConfig = policyConfigRaw
+	commitment.ReminderCount = reminderCount
 	commitment.Status = Status(strings.TrimSpace(statusRaw))
 	commitment.CreatedAt = parseTimestamp(createdAtRaw)
 	commitment.Deadline = parseTimestamp(deadlineRaw)
 	commitment.SnoozedUntil = parseTimestamp(snoozedUntilRaw)
+	commitment.LastCheckInAt = parseTimestamp(lastCheckInAtRaw)
+	commitment.CheckInQuietUntil = parseTimestamp(checkInQuietUntilRaw)
 	commitment.UpdatedAt = parseTimestamp(updatedAtRaw)
 
 	return commitment, nil
