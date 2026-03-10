@@ -38,9 +38,20 @@ pub(crate) struct CommandDefinition {
 pub(crate) struct CommandOptionDefinition {
     pub(crate) name: &'static str,
     #[serde(rename = "type")]
-    pub(crate) option_type: &'static str,
+    pub(crate) option_type: CommandOptionType,
     pub(crate) description: &'static str,
     pub(crate) required: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[allow(dead_code)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum CommandOptionType {
+    String,
+    Integer,
+    Number,
+    Boolean,
+    Attachment,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,7 +62,7 @@ pub(crate) struct CommandRequest {
     pub(crate) options: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CommandContext {
     pub(crate) discord_user_id: String,
@@ -159,5 +170,128 @@ impl TickerPayload {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{
+        CommandCatalogResponse, CommandContext, CommandDefinition, CommandOptionDefinition,
+        CommandOptionType, CommandRequest,
+    };
+
+    const SPOKE_CONTRACT_SCHEMA_V2: &str =
+        include_str!("../../../contracts/spoke-contract-v2.schema.json");
+
+    fn schema_root() -> serde_json::Value {
+        serde_json::from_str(SPOKE_CONTRACT_SCHEMA_V2).expect("schema JSON should parse")
+    }
+
+    fn schema_def(definition: &str) -> serde_json::Value {
+        let root = schema_root();
+        root["$defs"][definition].clone()
+    }
+
+    fn assert_schema_def_exists(definition: &str) {
+        let root: serde_json::Value =
+            serde_json::from_str(SPOKE_CONTRACT_SCHEMA_V2).expect("schema JSON should parse");
+        assert!(
+            root["$defs"].get(definition).is_some(),
+            "schema should include {definition}"
+        );
+    }
+
+    #[test]
+    fn schema_contract_compat_command_catalog_payload() {
+        assert_schema_def_exists("commandCatalog");
+
+        let payload = serde_json::to_value(CommandCatalogResponse {
+            version: 1,
+            service: "kalshi-spoke",
+            commands: vec![CommandDefinition {
+                name: "kalshi-rule-set",
+                description: "Set rule",
+                options: vec![CommandOptionDefinition {
+                    name: "threshold_dollars",
+                    option_type: CommandOptionType::Number,
+                    description: "Trigger threshold",
+                    required: true,
+                }],
+            }],
+            command_names: vec!["kalshi-rule-set".to_string()],
+        })
+        .expect("catalog should serialize");
+
+        let command_catalog_def = schema_def("commandCatalog");
+        assert_eq!(
+            command_catalog_def["required"],
+            json!(["version", "service", "commands"])
+        );
+        assert_eq!(payload["commandNames"], json!(["kalshi-rule-set"]));
+        assert_eq!(payload["commands"][0]["options"][0]["type"], "number");
+    }
+
+    #[test]
+    fn schema_contract_compat_command_request_payload() {
+        assert_schema_def_exists("commandExecuteRequest");
+
+        let payload = json!({
+            "command": "kalshi-rule-set",
+            "context": {
+                "discordUserId": "123456789012345678",
+                "guildId": "223456789012345678",
+                "channelId": "323456789012345678"
+            },
+            "options": {
+                "ticker": "PRES24",
+                "threshold_dollars": 0.61
+            }
+        });
+
+        let request_def = schema_def("commandExecuteRequest");
+        assert_eq!(request_def["required"], json!(["command", "context"]));
+        assert_eq!(request_def["additionalProperties"], false);
+
+        let parsed: CommandRequest = serde_json::from_value(payload).expect("request should parse");
+        assert_eq!(parsed.context.discord_user_id, "123456789012345678");
+    }
+
+    #[test]
+    fn schema_contract_compat_command_context_serialization() {
+        assert_schema_def_exists("commandContext");
+
+        let payload = serde_json::to_value(CommandContext {
+            discord_user_id: "123456789012345678".to_string(),
+            guild_id: Some("223456789012345678".to_string()),
+            channel_id: Some("323456789012345678".to_string()),
+        })
+        .expect("context should serialize");
+
+        let context_def = schema_def("commandContext");
+        assert_eq!(context_def["required"], json!(["discordUserId"]));
+        assert!(payload.get("discordUserId").is_some());
+        assert!(payload.get("discord_user_id").is_none());
+    }
+
+    #[test]
+    fn schema_contract_compat_option_type_enum() {
+        assert_schema_def_exists("optionType");
+
+        let option_type_def = schema_def("optionType");
+        assert_eq!(
+            option_type_def["enum"],
+            json!(["string", "integer", "number", "boolean", "attachment"])
+        );
+
+        let payload = serde_json::to_value(CommandOptionDefinition {
+            name: "ticker",
+            option_type: CommandOptionType::Attachment,
+            description: "Upload a file",
+            required: false,
+        })
+        .expect("option definition should serialize");
+        assert_eq!(payload["type"], "attachment");
     }
 }

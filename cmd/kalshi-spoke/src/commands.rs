@@ -12,8 +12,8 @@ use crate::{
     formatting::format_decimal_4,
     http::authorize,
     models::{
-        CommandCatalogResponse, CommandDefinition, CommandOptionDefinition, CommandRequest,
-        CommandResponse,
+        CommandCatalogResponse, CommandDefinition, CommandOptionDefinition, CommandOptionType,
+        CommandRequest, CommandResponse,
     },
     rules::TriggerRule,
     summaries::{
@@ -61,13 +61,13 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
                 options: vec![
                     CommandOptionDefinition {
                         name: OPTION_NAME_TICKER,
-                        option_type: "string",
+                        option_type: CommandOptionType::String,
                         description: "Market ticker, e.g. PRES24",
                         required: true,
                     },
                     CommandOptionDefinition {
                         name: OPTION_NAME_THRESHOLD_DOLLARS,
-                        option_type: "number",
+                        option_type: CommandOptionType::Number,
                         description: "Trigger threshold, between 0 and 1",
                         required: true,
                     },
@@ -78,7 +78,7 @@ pub(crate) async fn control_commands() -> Json<CommandCatalogResponse> {
                 description: "Remove a market rule and switch to observe-only",
                 options: vec![CommandOptionDefinition {
                     name: OPTION_NAME_TICKER,
-                    option_type: "string",
+                    option_type: CommandOptionType::String,
                     description: "Market ticker, e.g. PRES24",
                     required: true,
                 }],

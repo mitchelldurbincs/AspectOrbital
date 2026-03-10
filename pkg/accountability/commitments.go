@@ -149,7 +149,7 @@ func (s *Service) mutatePendingCommitment(ctx context.Context, userID string, mu
 	if err != nil {
 		return Commitment{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	active, err := activeCommitmentForUser(ctx, tx, userID)
 	if err != nil {
