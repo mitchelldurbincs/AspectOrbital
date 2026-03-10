@@ -14,9 +14,10 @@
 
 It also sends alerts through `discord-hub` using `POST /notify`.
 
-## Rule in this V1
+## Trigger behavior
 
-- Trigger when `yes_bid_dollars >= KALSHI_TRIGGER_YES_BID_DOLLARS`.
+- Trigger applies per market when a threshold exists in `KALSHI_TRIGGER_YES_BID_BY_MARKET`.
+- Markets without a threshold stay in observe-only mode (price/status updates still work).
 - `yes_bid_dollars` is the **current market YES bid**, not your original entry price.
 - Trigger is edge-based: it fires when crossing from below to above.
 - It re-arms only after price drops below the threshold again.
@@ -43,7 +44,7 @@ To actually place orders, all three must be true/false in the right combination:
 
 Other common vars:
 
-- `KALSHI_TRIGGER_YES_BID_DOLLARS`
+- `KALSHI_TRIGGER_YES_BID_BY_MARKET` (optional `TICKER=0.1234` pairs, comma-separated)
 - `HUB_NOTIFY_URL`
 - `HUB_NOTIFY_AUTH_TOKEN`
 - `KALSHI_NOTIFY_CHANNEL`
@@ -76,3 +77,6 @@ Bind address is configured by `KALSHI_SPOKE_HTTP_ADDR`.
 
 - `kalshi-status` — returns current runtime and persisted trigger state.
 - `kalshi-positions` — returns YES/NO contract exposure summary with market titles, prompts, and tickers.
+- `kalshi-thresholds` — returns trigger-enabled vs observe-only mode for tracked markets.
+- `kalshi-threshold-set` — sets trigger threshold for a ticker (`ticker`, `yes_bid_dollars`).
+- `kalshi-threshold-remove` — removes trigger threshold for a ticker (observe-only mode).

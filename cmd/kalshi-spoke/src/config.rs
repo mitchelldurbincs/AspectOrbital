@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, str::FromStr, time::Duration};
+use std::{collections::BTreeMap, env, path::PathBuf, str::FromStr, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
 use rust_decimal::Decimal;
@@ -17,7 +17,7 @@ pub struct Config {
     pub kalshi_access_key: String,
     pub kalshi_private_key_path: PathBuf,
     pub market_tickers: Vec<String>,
-    pub trigger_yes_bid_dollars: Decimal,
+    pub trigger_yes_bid_by_market: BTreeMap<String, Decimal>,
     pub auto_sell_enabled: bool,
     pub dry_run: bool,
     pub subaccount: u32,
@@ -36,7 +36,7 @@ pub struct PublicConfig {
     pub kalshi_api_base_url: String,
     pub kalshi_ws_url: String,
     pub market_tickers: Vec<String>,
-    pub trigger_yes_bid_dollars: String,
+    pub trigger_yes_bid_by_market: BTreeMap<String, String>,
     pub auto_sell_enabled: bool,
     pub dry_run: bool,
     pub subaccount: u32,
@@ -60,16 +60,24 @@ impl Config {
         let kalshi_private_key_path =
             PathBuf::from(string_env_required("KALSHI_PRIVATE_KEY_PATH")?);
         let market_tickers = parse_csv_env_required("KALSHI_MARKET_TICKERS")?;
-
-        let trigger_yes_bid_dollars = decimal_env_required("KALSHI_TRIGGER_YES_BID_DOLLARS")?;
+        let trigger_yes_bid_by_market =
+            parse_market_thresholds_env_optional("KALSHI_TRIGGER_YES_BID_BY_MARKET")?;
         let auto_sell_enabled = bool_env_required("KALSHI_AUTO_SELL_ENABLED")?;
         let dry_run = bool_env_required("KALSHI_DRY_RUN")?;
         let subaccount = u32_env_required("KALSHI_SUBACCOUNT")?;
         let http_timeout = duration_env_required("KALSHI_HTTP_TIMEOUT")?;
         let ws_reconnect_delay = duration_env_required("KALSHI_WS_RECONNECT_DELAY")?;
 
-        if trigger_yes_bid_dollars <= Decimal::ZERO || trigger_yes_bid_dollars >= Decimal::ONE {
-            bail!("KALSHI_TRIGGER_YES_BID_DOLLARS must be between 0 and 1 (example: 0.6000)");
+        for ticker in trigger_yes_bid_by_market.keys() {
+            if !market_tickers
+                .iter()
+                .any(|market_ticker| market_ticker.eq_ignore_ascii_case(ticker))
+            {
+                bail!(
+                    "KALSHI_TRIGGER_YES_BID_BY_MARKET includes unknown ticker {} (not in KALSHI_MARKET_TICKERS)",
+                    ticker
+                );
+            }
         }
 
         if subaccount > 32 {
@@ -95,7 +103,7 @@ impl Config {
             kalshi_access_key,
             kalshi_private_key_path,
             market_tickers,
-            trigger_yes_bid_dollars,
+            trigger_yes_bid_by_market,
             auto_sell_enabled,
             dry_run,
             subaccount,
@@ -104,8 +112,16 @@ impl Config {
         })
     }
 
-    pub fn trigger_threshold_string(&self) -> String {
-        format!("{:.4}", self.trigger_yes_bid_dollars)
+    pub fn market_threshold_decimal(&self, market_ticker: &str) -> Option<Decimal> {
+        self.trigger_yes_bid_by_market
+            .get(market_ticker)
+            .copied()
+            .or_else(|| {
+                self.trigger_yes_bid_by_market
+                    .iter()
+                    .find(|(ticker, _)| ticker.eq_ignore_ascii_case(market_ticker))
+                    .map(|(_, threshold)| *threshold)
+            })
     }
 
     pub fn public(&self) -> PublicConfig {
@@ -119,7 +135,11 @@ impl Config {
             kalshi_api_base_url: self.kalshi_api_base_url.clone(),
             kalshi_ws_url: self.kalshi_ws_url.clone(),
             market_tickers: self.market_tickers.clone(),
-            trigger_yes_bid_dollars: self.trigger_threshold_string(),
+            trigger_yes_bid_by_market: self
+                .trigger_yes_bid_by_market
+                .iter()
+                .map(|(ticker, threshold)| (ticker.clone(), format_decimal_4(*threshold)))
+                .collect(),
             auto_sell_enabled: self.auto_sell_enabled,
             dry_run: self.dry_run,
             subaccount: self.subaccount,
@@ -189,9 +209,46 @@ fn parse_duration(raw: &str) -> Result<Duration> {
     Ok(Duration::from_secs(secs))
 }
 
-fn decimal_env_required(key: &str) -> Result<Decimal> {
-    let raw = string_env_required(key)?;
-    Decimal::from_str(raw.trim()).with_context(|| format!("invalid {} value {:?}", key, raw))
+fn parse_market_thresholds_env_optional(key: &str) -> Result<BTreeMap<String, Decimal>> {
+    let raw = match env::var(key) {
+        Ok(value) => value,
+        Err(_) => return Ok(BTreeMap::new()),
+    };
+
+    if raw.trim().is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut output = BTreeMap::new();
+    for entry in raw.split(',') {
+        let item = entry.trim();
+        if item.is_empty() {
+            continue;
+        }
+
+        let Some((ticker_raw, threshold_raw)) = item.split_once('=') else {
+            bail!("invalid {} entry {:?}; expected TICKER=0.1234", key, item);
+        };
+
+        let ticker = ticker_raw.trim().to_string();
+        if ticker.is_empty() {
+            bail!("invalid {} entry {:?}; ticker is required", key, item);
+        }
+
+        let threshold = Decimal::from_str(threshold_raw.trim())
+            .with_context(|| format!("invalid threshold {:?} in {}", threshold_raw, key))?;
+        if threshold <= Decimal::ZERO || threshold >= Decimal::ONE {
+            bail!(
+                "{} value for {} must be between 0 and 1 (example: 0.6000)",
+                key,
+                ticker
+            );
+        }
+
+        output.insert(ticker, threshold);
+    }
+
+    Ok(output)
 }
 
 fn normalize_severity(raw: &str) -> Result<String> {
@@ -206,4 +263,8 @@ fn normalize_severity(raw: &str) -> Result<String> {
 
 fn trim_trailing_slash(value: &str) -> String {
     value.trim_end_matches('/').to_string()
+}
+
+fn format_decimal_4(value: Decimal) -> String {
+    format!("{:.4}", value.round_dp(4))
 }

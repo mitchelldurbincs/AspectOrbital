@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
@@ -14,6 +15,8 @@ use tokio::sync::Mutex;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedState {
     pub markets: BTreeMap<String, MarketState>,
+    #[serde(default)]
+    pub trigger_yes_bid_by_market: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -67,6 +70,109 @@ impl StateStore {
 
     pub async fn has_market(&self, market_ticker: &str) -> bool {
         self.state.lock().await.markets.contains_key(market_ticker)
+    }
+
+    pub async fn market_threshold_yes_bid_dollars(
+        &self,
+        market_ticker: &str,
+    ) -> Result<Option<Decimal>> {
+        let guard = self.state.lock().await;
+        let raw = guard
+            .trigger_yes_bid_by_market
+            .get(market_ticker)
+            .cloned()
+            .or_else(|| {
+                guard
+                    .trigger_yes_bid_by_market
+                    .iter()
+                    .find(|(ticker, _)| ticker.eq_ignore_ascii_case(market_ticker))
+                    .map(|(_, threshold)| threshold.clone())
+            });
+
+        let Some(value) = raw else {
+            return Ok(None);
+        };
+
+        let parsed = value.trim().parse::<Decimal>().with_context(|| {
+            format!(
+                "invalid persisted threshold {:?} for {}",
+                value, market_ticker
+            )
+        })?;
+
+        Ok(Some(parsed))
+    }
+
+    pub async fn seed_thresholds_if_missing(
+        &self,
+        thresholds: &BTreeMap<String, Decimal>,
+    ) -> Result<usize> {
+        let mut guard = self.state.lock().await;
+        let mut inserted = 0usize;
+
+        for (ticker, threshold) in thresholds {
+            if guard
+                .trigger_yes_bid_by_market
+                .keys()
+                .any(|existing| existing.eq_ignore_ascii_case(ticker))
+            {
+                continue;
+            }
+
+            guard
+                .trigger_yes_bid_by_market
+                .insert(ticker.clone(), format!("{:.4}", threshold.round_dp(4)));
+            inserted += 1;
+        }
+
+        if inserted > 0 {
+            self.save_locked(&guard)?;
+        }
+
+        Ok(inserted)
+    }
+
+    pub async fn set_market_threshold_yes_bid_dollars(
+        &self,
+        market_ticker: &str,
+        threshold: Decimal,
+    ) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let key = guard
+            .trigger_yes_bid_by_market
+            .keys()
+            .find(|existing| existing.eq_ignore_ascii_case(market_ticker))
+            .cloned()
+            .unwrap_or_else(|| market_ticker.to_string());
+
+        guard
+            .trigger_yes_bid_by_market
+            .insert(key, format!("{:.4}", threshold.round_dp(4)));
+        self.save_locked(&guard)
+    }
+
+    pub async fn remove_market_threshold_yes_bid_dollars(
+        &self,
+        market_ticker: &str,
+    ) -> Result<bool> {
+        let mut guard = self.state.lock().await;
+        let removed = guard
+            .trigger_yes_bid_by_market
+            .remove(market_ticker)
+            .is_some()
+            || guard
+                .trigger_yes_bid_by_market
+                .keys()
+                .find(|existing| existing.eq_ignore_ascii_case(market_ticker))
+                .cloned()
+                .and_then(|key| guard.trigger_yes_bid_by_market.remove(&key))
+                .is_some();
+
+        if removed {
+            self.save_locked(&guard)?;
+        }
+
+        Ok(removed)
     }
 
     pub async fn update_market<F>(&self, market_ticker: &str, update: F) -> Result<MarketState>
