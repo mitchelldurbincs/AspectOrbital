@@ -2,13 +2,50 @@ package beeminder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestCreateGoalDatapointSendsAuthTokenInBodyNotURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("auth_token") != "" {
+			t.Errorf("auth_token must not appear in URL query params for POST requests; got %q", r.URL.Query().Get("auth_token"))
+		}
+
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rawBody, &body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if body["auth_token"] != "secret" {
+			t.Errorf("auth_token in request body = %v, want %q", body["auth_token"], "secret")
+		}
+		fmt.Fprint(w, `{"id":"dp1","timestamp":1234567890,"daystamp":"20260311","value":1}`)
+	}))
+	defer server.Close()
+
+	client := NewClient(
+		WithBaseURL(server.URL),
+		WithUsername("alice"),
+		WithAuthToken("secret"),
+	)
+
+	_, err := client.CreateGoalDatapoint(context.Background(), "study", CreateDatapointRequest{Value: 1})
+	if err != nil {
+		t.Fatalf("CreateGoalDatapoint() error = %v", err)
+	}
+}
 
 func TestGetUserDecodesJSON(t *testing.T) {
 	t.Parallel()

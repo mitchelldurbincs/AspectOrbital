@@ -264,7 +264,9 @@ func (c *Client) CreateGoalDatapoint(ctx context.Context, goalSlug string, reque
 		return Datapoint{}, fmt.Errorf("beeminder client is not configured")
 	}
 
-	payload := map[string]any{"value": request.Value}
+	// auth_token goes in the request body for POST so it never appears in the URL
+	// (and therefore never appears in web-server access logs or proxy logs).
+	payload := map[string]any{"value": request.Value, "auth_token": c.authToken}
 	if request.Comment != "" {
 		payload["comment"] = request.Comment
 	}
@@ -281,7 +283,7 @@ func (c *Client) CreateGoalDatapoint(ctx context.Context, goalSlug string, reque
 	}
 
 	path := "/users/me/goals/" + url.PathEscape(strings.TrimSpace(goalSlug)) + "/datapoints.json"
-	fullURL := c.withAuthToken(path, nil)
+	fullURL := c.baseURL + path
 
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(body))
 	if err != nil {
@@ -309,6 +311,10 @@ func (c *Client) CreateGoalDatapoint(ctx context.Context, goalSlug string, reque
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out any) error {
+	// Beeminder's personal auth token must be a query parameter for GET requests;
+	// the API does not support Authorization headers for personal tokens.
+	// This means the token will appear in server access logs. This is a known
+	// limitation of the Beeminder API for read-only operations.
 	fullURL := c.withAuthToken(path, query)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)

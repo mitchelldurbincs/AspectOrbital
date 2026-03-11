@@ -9,3 +9,8 @@ var/
 target/
 *.exe
 *.db
+
+# Private key files
+*.pem
+*.key
+*.p8
