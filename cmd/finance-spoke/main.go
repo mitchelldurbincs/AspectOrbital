@@ -14,6 +14,7 @@ import (
 	"personal-infrastructure/pkg/hubnotify"
 	"personal-infrastructure/pkg/lifecycle"
 	applog "personal-infrastructure/pkg/logger"
+	"personal-infrastructure/pkg/spokecontrol"
 )
 
 const summaryRunTimeout = 30 * time.Second
@@ -141,6 +142,10 @@ func (a *financeApp) handleRunWeeklySummary(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !spokecontrol.IsAuthorized(r, a.cfg.SpokeCommandAuthToken) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), summaryRunTimeout)
 	defer cancel()
@@ -162,6 +167,10 @@ func (a *financeApp) handleRunWeeklySummary(w http.ResponseWriter, r *http.Reque
 func (a *financeApp) handleCreateLinkToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !spokecontrol.IsAuthorized(r, a.cfg.SpokeCommandAuthToken) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if !a.plaid.HasCredentials() {
@@ -205,6 +214,10 @@ func (a *financeApp) handlePlaidSetupPage(w http.ResponseWriter, r *http.Request
 func (a *financeApp) handleExchangePublicToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !spokecontrol.IsAuthorized(r, a.cfg.SpokeCommandAuthToken) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if !a.plaid.HasCredentials() {
@@ -280,21 +293,29 @@ const plaidSetupPage = `<!doctype html>
 <body>
   <h1>Plaid setup helper</h1>
   <p>Use this page to connect Fifth Third and American Express, then copy returned access tokens into <code>PLAID_ACCESS_TOKENS</code> in your root <code>.env</code>.</p>
+  <label for="authToken" style="display:block;margin-bottom:.5rem">SPOKE_COMMAND_AUTH_TOKEN:</label>
+  <input id="authToken" type="password" placeholder="paste your auth token" style="width:100%;padding:.5rem;font-size:1rem;margin-bottom:1rem;box-sizing:border-box" />
   <button id="launch">Connect account</button>
   <pre id="output">Ready.</pre>
 
   <script>
     const output = document.getElementById('output')
     const launch = document.getElementById('launch')
+    const authInput = document.getElementById('authToken')
 
     const setOutput = (value) => { output.textContent = value }
 
     launch.addEventListener('click', async () => {
+      const token = authInput.value.trim()
+      if (!token) {
+        setOutput('Error: enter your SPOKE_COMMAND_AUTH_TOKEN before connecting.')
+        return
+      }
       try {
         setOutput('Creating link token...')
         const linkResp = await fetch('/plaid/link-token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({ clientUserId: 'local-finance-user' }),
         })
         const linkData = await linkResp.json()
@@ -308,7 +329,7 @@ const plaidSetupPage = `<!doctype html>
             setOutput('Exchanging public token...')
             const exchangeResp = await fetch('/plaid/exchange-public-token', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
               body: JSON.stringify({ publicToken }),
             })
 
